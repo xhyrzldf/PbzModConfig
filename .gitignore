@@ -1,0 +1,17 @@
+.local/
+__pycache__/
+*.py[cod]
+node_modules/
+dist/
+*.log
+.env
+.env.*
+*.pem
+*.key
+*.pak
+*.utoc
+*.ucas
+*.zip
+*.7z
+.DS_Store
+Thumbs.db
