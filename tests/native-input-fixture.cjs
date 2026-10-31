@@ -16,7 +16,7 @@ function widget() {
         SetIsInteractionEnabled() {}, SetIsFocusable() {}, SetIsEnabled() {}, SetButtonText() {} };
 }
 
-function fixture() {
+function fixture(options = {}) {
     const reports = [], root = {}, calls = [];
     // A normal optional provider populates the menu, as a business mod does.
     const provider = createDemo(memoryIO(), { root, modId: "PbzMapTracker" });
@@ -27,8 +27,10 @@ function fixture() {
         GameSettingCollection: { StaticClass: () => "Collection" }, NewObject: () => ({}), NewArray: () => array([]),
         Margin: class { constructor() { this.Left = this.Right = this.Top = this.Bottom = 0; } },
         PBZTabDescriptor: class { constructor() { this.TabText = {}; } },
-        EWidgetTickFrequency: { Never: 0 }, EHorizontalAlignment: {}, EVerticalAlignment: {},
-        KismetInternationalizationLibrary: { GetCurrentLanguage: () => "en" },
+        EWidgetTickFrequency: { Never: 0 }, EHorizontalAlignment: {HAlign_Fill: 0}, EVerticalAlignment: {}, ETextJustify: {Left: 0, Right: 2},
+        KismetInternationalizationLibrary: { GetCurrentLanguage: () => options.engineLanguage || "en" },
+        PBZBlueprintFunctionLibrary: { MakeTextByKey: () => options.menuText || "NEW GAME" },
+        KismetTextLibrary: { Conv_TextToString: value => value },
         KismetInputLibrary: {
             GetKey: event => ({ KeyName: event.key }), InputEvent_IsRepeat: event => !!event.repeat,
             GetAnalogValue: event => event.value
@@ -51,7 +53,10 @@ function fixture() {
             } };
         },
         native: () => list,
-        widget() { return Object.assign(widget(), { Button_Action: widget() }); },
+        widget() { return Object.assign(widget(), { Button_Action: widget(), Text_SettingName: {
+            justification: 2, SetJustification(value) { this.justification=value; }, SetVisibility() {},
+            Slot: { alignment: 2, SetHorizontalAlignment(value) { this.alignment=value; } }
+        } }); },
         mount: () => ({ root: widget(), detailRoot: widget(), external: false })
     };
     const children = [], buttons = new Map();
@@ -89,8 +94,17 @@ function fixture() {
     host.OnListItemObjectSet(item);
     if (!state.entries.has(id)) throw new Error("Fixture row failed to bind: " + JSON.stringify(reports));
     state.selected = id;
+    const originalAction=state.action;
     for (const name of ["move", "step", "action"]) state[name] = (...args) => calls.push([name, ...args]);
     return { state, host, id, calls, reports,
+        bindHeader() {
+            originalAction(id); state.refresh();
+            const header=[...state.models].find(([,m])=>m.type==="header");
+            if(!header)throw Error("No provider group header");
+            const h=new RowHost(); h.WidgetTree={RootWidget:{GetChildrenCount:()=>0,AddChild:()=>({})}};
+            h.OnListItemObjectSet(header[0]);
+            return state.entries.get(header[1].id);
+        },
         key: (key, repeat = false) => host.OnPreviewKeyDown({}, { key, repeat }),
         analog: (key, value) => host.OnAnalogValueChanged({}, { key, value }),
         dispose() { state.dispose(); provider.dispose(); }

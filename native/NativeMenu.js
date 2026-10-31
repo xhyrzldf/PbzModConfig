@@ -3,7 +3,7 @@ const { createSupport } = require("./NativeSupport");
 const { createRows } = require("./NativeRows");
 const { createFooter } = require("./NativeFooter");
 const { createIconLoader } = require("./NativeIcon");
-const { resolve, language } = require("../src/Localization");
+const { resolve, gameLanguage } = require("../src/Localization");
 const { words: WORDS } = require("../src/LocaleStrings");
 const TAB = "PbzModConfig";
 function createMenu(UE, puerts, framework, report) {
@@ -16,7 +16,7 @@ function createMenu(UE, puerts, framework, report) {
         const state = {
             panel, scope: ui.lifetime(), hostScope: null, disposed: false, active: false, covered: false,
             confirming: false, entries: new Map(), models: new Map(), byId: new Map(), owners: new Map(),
-            selected: null, pendingFocus: null, entriesGenerated: false, refreshTimer: null, locale: "en",
+            selected: null, pendingFocus: null, entriesGenerated: false, refreshTimer: null, locale: "zhHans",
             word: name => resolve(WORDS[name], state.locale),
             acceptsInput: () => !state.disposed && state.active && !state.covered && !state.confirming,
             flush: () => framework.flushAll(),
@@ -28,7 +28,7 @@ function createMenu(UE, puerts, framework, report) {
                 }, 0);
             },
             refresh() {
-                state.locale = language(UE.KismetInternationalizationLibrary.GetCurrentLanguage());
+                state.locale = gameLanguage(UE, state.locale);
                 framework.setLanguage(state.locale);
                 const pages = framework.pages(), rows = [];
                 const owners = new Map();
@@ -343,7 +343,7 @@ function createMenu(UE, puerts, framework, report) {
             const languageTimer = setInterval(() => protect(state, () => {
                 if (state.disposed) return;
                 if (!ui.valid(panel)) { state.dispose(); return; }
-                const current = language(UE.KismetInternationalizationLibrary.GetCurrentLanguage());
+                const current = gameLanguage(UE, state.locale);
                 if (current !== state.locale) state.queueRefresh();
             }), 500);
             state.scope.own(() => clearInterval(languageTimer));

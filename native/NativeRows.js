@@ -114,6 +114,13 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
                 b.applying = true;
                 try {
                     ui.text(row.Text_SettingName, m.label);
+                    if ((m.type === "header" || m.section) && row.Text_SettingName) {
+                        // Runtime-created native headings retain their default
+                        // justification unless explicitly aligned with setting names.
+                        row.Text_SettingName.SetJustification(UE.ETextJustify.Left);
+                        const nameSlot = row.Text_SettingName.Slot;
+                        if (nameSlot && typeof nameSlot.SetHorizontalAlignment === "function") nameSlot.SetHorizontalAlignment(UE.EHorizontalAlignment.HAlign_Fill);
+                    }
                     b.update(m);
                     // Leave the row focusable so the disabled reason remains discoverable.
                     for (const control of b.controls) control.SetIsEnabled(m.enabled !== false);

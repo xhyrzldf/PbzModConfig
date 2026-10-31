@@ -5,7 +5,7 @@
 `package.py` 为“影之刃零 模组安装器”的签名发行协议提供可选适配。需要另行取得安装器作者工具 `pbz-pack.exe` 和自己的发布密钥；它们不是构建或手动安装的依赖，也不包含在本仓库中。
 
 ```powershell
-python package.py --build .local/build-0.2.6-preview --packer "<pbz-pack.exe路径>" --key "<发布私钥路径>" --out .local/releases/PbzModConfig-0.2.6-preview.zip
+python package.py --build .local/build-0.2.7-preview --packer "<pbz-pack.exe路径>" --key "<发布私钥路径>" --out .local/releases/PbzModConfig-0.2.7-preview.zip
 ```
 
 打包前检查三件套哈希、唯一原版覆盖清单及演示排除标记。版本来自 `src/Metadata.js`，包描述来自 [release-spec.json](release-spec.json)。当前打包通道为 `preview`。
