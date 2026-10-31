@@ -233,7 +233,9 @@ function createMenu(UE, puerts, framework, report) {
                 else if (["Right", "D", "Gamepad_DPad_Right", "Gamepad_LeftStick_Right"].includes(name)) state.step(id, 1);
                 else if (["Enter", "SpaceBar", "Gamepad_FaceButton_Bottom"].includes(name)) {
                     if (!repeat) { const m = state.models.get(state.byId.get(id)); if (m?.type === "action") state.action(id); else state.step(id, 1); }
-                } else if (["Escape", "Gamepad_FaceButton_Right", "Gamepad_LeftShoulder", "Gamepad_RightShoulder"].includes(name)) return false;
+                } else if (["Z", "C", "Escape", "Gamepad_FaceButton_Right", "Gamepad_LeftShoulder", "Gamepad_RightShoulder",
+                    "Gamepad_LeftTrigger", "Gamepad_RightTrigger"].includes(name)) return false;
+                // Native tab actions retain ownership of Z/C and shoulder/trigger input, including repeats.
                 // Other keys stay in this native settings page, including business mod hotkeys.
                 return true;
             },

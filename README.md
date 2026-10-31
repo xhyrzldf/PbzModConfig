@@ -2,7 +2,7 @@
 
 在游戏原生设置中增加「模组」页签，为接入的模组提供统一的配置界面。
 
-**版本：0.2.5-preview** · **目标游戏构建：Steam 26266538 / UE 5.7.4**
+**版本：0.2.6-preview** · **目标游戏构建：Steam 26266538 / UE 5.7.4**
 
 作者：[皮一下就很凡@Bilibili](https://space.bilibili.com/26786884)
 
@@ -40,7 +40,7 @@
 在仓库根目录执行（替换示例路径）：
 
 ```powershell
-python build.py --source-root "<脚本导出根目录>" --game-root "<游戏安装目录>" --repak "<repak.exe路径>" --retoc "<retoc.exe路径>" --out .local/build-0.2.5-preview
+python build.py --source-root "<脚本导出根目录>" --game-root "<游戏安装目录>" --repak "<repak.exe路径>" --retoc "<retoc.exe路径>" --out .local/build-0.2.6-preview
 ```
 
 输出是 `zzz_PBZModConfig_P.pak/.utoc/.ucas` 三件套及哈希清单。输出必须位于本仓库 `.local/` 下的新子目录；脚本不会安装模组，也不会覆盖旧构建。
@@ -64,7 +64,7 @@ python build.py --source-root "<脚本导出根目录>" --out .local/stage-check
 ## 开发检查
 
 ```powershell
-node --test tests/core.test.cjs tests/adapters.test.cjs
+node --test tests/core.test.cjs tests/adapters.test.cjs tests/native-input.test.cjs
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
