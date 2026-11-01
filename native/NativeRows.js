@@ -6,8 +6,10 @@ function heldModifiers(UE, owner) {
     // PlayerController.IsInputKeyDown is false under the native menu input mode.
     const router = UE.SubsystemBlueprintLibrary.GetLocalPlayerSubsystem(owner, UE.PBZUIActionRouterBase.StaticClass());
     if (!router || typeof router.IsUIKeyHeld !== "function") throw new Error("MODIFIER_STATE_UNAVAILABLE");
-    return Object.fromEntries([["Ctrl","Control"],["Alt","Alt"],["Shift","Shift"],["Cmd","Command"]].map(([name,key])=>
-        [name,["Left","Right"].some(side=>router.IsUIKeyHeld(new UE.Key(side+key)))]));
+    // This runtime targets Windows. Command queries can report held even
+    // without a physical key press; only expose supported chord modifiers.
+    return { ...Object.fromEntries([["Ctrl","Control"],["Alt","Alt"],["Shift","Shift"]].map(([name,key])=>
+        [name,["Left","Right"].some(side=>router.IsUIKeyHeld(new UE.Key(side+key)))])), Cmd: false };
 }
 // Language names remain in their own language even while the menu is Chinese.
 // The game's rotator otherwise chooses a font from the menu language alone.
@@ -85,7 +87,7 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
         const scope = ui.lifetime();
         let row;
         try {
-            row = ui.widget(state.panel, cls(({ number: "Scalar", toggle: "Discrete", choice: "Discrete", action: "Action", header: "Header" })[model.type]));
+            row = ui.widget(state.panel, cls(({ number: "Scalar", toggle: "Discrete", choice: "Discrete", action: "Discrete", header: "Header" })[model.type]));
             row.TickFrequency = UE.EWidgetTickFrequency.Never;
             row.SetVisibility(ui.V.SelfHitTestInvisible);
             const root = host.WidgetTree.RootWidget;
@@ -158,9 +160,26 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
                     for (const name of ["CurrentValue", "Text_SettingValue"]) if (ui.valid(row[name])) row[name].SetVisibility(ui.V.Collapsed);
                 };
             } else if (model.type === "action") {
-                const fresh = button(row.Button_Action, () => state.action(b.id));
-                row.Button_Action = fresh; b.control = fresh;
-                b.update = m => fresh.SetButtonText(ui.asText(m.buttonLabel || m.label));
+                // Build 26266538 W_SettingBaseButton (used by the Action row)
+                // contains only an empty Overlay. SetButtonText cannot render
+                // a binding there. Reuse the native, localized value control.
+                const fresh = button(row.Rotator_SettingValue, () => state.action(b.id));
+                row.Rotator_SettingValue = fresh; b.control = fresh;
+                // This value opens an editor; it must not look like a cycle.
+                row.Button_Decrease.SetVisibility(ui.V.Collapsed);
+                row.Button_Increase.SetVisibility(ui.V.Collapsed);
+                // Arrows are siblings of the buttons. Native selection can
+                // show their overlays again; detach the decorations entirely.
+                row.DecreaseOverlay.RemoveFromParent();
+                row.IncreaseOverlay.RemoveFromParent();
+                fresh.OptionsScalingSizeBox.RemoveFromParent();
+                b.update = m => {
+                    const value = m.buttonLabel || m.label, labels = UE.NewArray(UE.BuiltinText);
+                    labels.Add(ui.asText(value));
+                    fresh.PopulateTextLabels(labels);
+                    fresh.SetSelectedItem(0);
+                    styleChoice(fresh, value, state.locale);
+                };
             } else {
                 b.update = () => {};
             }
@@ -225,7 +244,9 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
         OnMouseEnter() { const b = bindings.get(this); if (b?.state.acceptsInput()) b.state.select(b.id, false); }
         OnMouseButtonDown(geometry, event) {
             const b = bindings.get(this);
-            if (b?.state.acceptsInput() && b.state.models.get(b.item)?.section &&
+            const model = b?.state.models.get(b.item);
+            if (b?.scope.live && !b.applying && b.state.acceptsInput() && model?.type === "action" && model.enabled !== false &&
+                (!b.state.editors.capturing || ["cancel", "clear"].includes(model.editorAction)) &&
                 typeof UE.KismetInputLibrary.PointerEvent_GetEffectingButton === "function" &&
                 String(UE.KismetInputLibrary.PointerEvent_GetEffectingButton(event).KeyName) === "LeftMouseButton") {
                 b.state.action(b.id); return UE.WidgetBlueprintLibrary.Handled();

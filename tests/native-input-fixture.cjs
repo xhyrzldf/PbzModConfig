@@ -10,10 +10,28 @@ function array(values) {
     return { Num: () => values.length, Get: i => values[i], GetRef: i => values[i],
         Add: value => values.push(value), RemoveAt: i => values.splice(i, 1) };
 }
-function widget() {
+function delegate() {
+    const handlers = new Set();
+    return { Add: fn => handlers.add(fn), Remove: fn => handlers.delete(fn),
+        emit: (...args) => { for (const fn of [...handlers]) fn(...args); } };
+}
+function widget(type = "FixtureWidget") {
     return { visibility: 0, SetVisibility(value) { this.visibility = value; }, GetVisibility() { return this.visibility; },
-        GetClass: () => "FixtureWidget", RemoveFromParent() {}, SetSelected() {}, SetFocus() {},
-        SetIsInteractionEnabled() {}, SetIsFocusable() {}, SetIsEnabled() {}, SetButtonText() {} };
+        GetClass: () => type, attached: true, RemoveFromParent() { this.attached = false; }, SetSelected() {}, SetFocus() {},
+        OnButtonBaseClicked: delegate(), OnRotated: delegate(),
+        SetIsInteractionEnabled(value) { this.interactive = value; }, SetIsFocusable() {},
+        SetIsEnabled(value) { this.enabled = value; },
+        // The native Action button has an empty Overlay, not a text widget.
+        SetButtonText() {} };
+}
+function rotator() {
+    return Object.assign(widget("FixtureRotator"), {
+        OptionsScalingSizeBox: widget(),
+        Text: { Font: {}, SetFont(font) { this.Font = font; } },
+        PopulateTextLabels(values) { this.labels = Array.from({length: values.Num()}, (_,i) => values.Get(i)); },
+        SetSelectedItem(index) { this.index = index; this.selectedText = this.labels[index]; },
+        GetSelectedIndex() { return this.index; }
+    });
 }
 
 function fixture(options = {}) {
@@ -54,13 +72,19 @@ function fixture(options = {}) {
         asText: value => value, text() {}, replaceControl() {},
         lifetime() {
             const cleanup = [];
-            return { live: true, bind() {}, own(fn) { cleanup.push(fn); }, dispose() {
+            return { live: true, bind(event, fn) {
+                if (!event) return; // Menu-only delegates are outside this fixture.
+                event.Add(fn); cleanup.push(() => event.Remove(fn));
+            }, own(fn) { cleanup.push(fn); }, dispose() {
                 this.live = false; cleanup.splice(0).forEach(fn => fn());
             } };
         },
         native(owner,kind) { return kind === "CommonListView" ? list : Object.assign(widget(),{SetBrushFromTexture(){},SetColorAndOpacity(){},SetMinValue(){},SetMaxValue(){},SetStepSize(){},SetValue(){},SetDisplayValue(){}}); },
-        widget() { return Object.assign(widget(), { Button_Action: widget(), Button_Decrease:widget(), Button_Increase:widget(),
-            Slider_SettingValue:widget(),InitCachedTexts(){},Rotator_SettingValue:Object.assign(widget(),{Text:{Font:{},SetFont(){}},PopulateTextLabels(){},SetSelectedItem(){}}), Text_SettingName: {
+        widget(owner, type) {
+            if (type === "FixtureRotator") return rotator();
+            return Object.assign(widget(), { Button_Action: widget(), Button_Decrease:widget(), Button_Increase:widget(),
+            DecreaseOverlay:widget(), IncreaseOverlay:widget(),
+            Slider_SettingValue:widget(),InitCachedTexts(){},Rotator_SettingValue:rotator(), Text_SettingName: {
             justification: 2, SetJustification(value) { this.justification=value; }, SetVisibility() {},
             Slot: { alignment: 2, SetHorizontalAlignment(value) { this.alignment=value; } }
         } }); },
