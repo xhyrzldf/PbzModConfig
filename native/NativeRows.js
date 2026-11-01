@@ -88,7 +88,9 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
         let row;
         try {
             row = ui.widget(state.panel, cls(({ number: "Scalar", toggle: "Discrete", choice: "Discrete", action: "Discrete", header: "Header" })[model.type]));
-            row.TickFrequency = UE.EWidgetTickFrequency.Never;
+            // Scalar's native Tick only positions Text_SettingValue from cached
+            // geometry. Keep it active so resizing and first layout stay correct.
+            if (model.type !== "number") row.TickFrequency = UE.EWidgetTickFrequency.Never;
             row.SetVisibility(ui.V.SelfHitTestInvisible);
             const root = host.WidgetTree.RootWidget;
             for (let i = 0; i < root.GetChildrenCount(); i++) root.GetChildAt(i).SetVisibility(ui.V.Collapsed);
@@ -150,14 +152,27 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
                 row.Button_Decrease = button(row.Button_Decrease, () => state.step(b.id, -1));
                 row.Button_Increase = button(row.Button_Increase, () => state.step(b.id, 1));
                 row.InitCachedTexts();
+                // Build 26266538 native Scalar: browse = fixed current value;
+                // selected = both range endpoints + separate thumb-following value.
+                // Do not replace the maximum with the current value.
+                const fixed=row.CurrentValue,cursor=row.Text_SettingValue;
+                const left=row.Text_LeftValue||row.LeftValue,right=row.Text_RightValue||row.RightValue;
+                if(![fixed,cursor,left,right].every(ui.valid)||typeof row.UpdateCursorTextPosition!=="function")throw new Error("SCALAR_VALUE_LAYOUT_UNAVAILABLE");
+                b.refreshValue=(selected=state.selected===b.id)=>{
+                    const m=state.models.get(item);if(!m||!scope.live)return;
+                    ui.text(fixed,m.displayValue);ui.text(cursor,m.displayValue);
+                    ui.text(left,m.minDisplayValue);ui.text(right,m.maxDisplayValue);
+                    fixed.SetRenderOpacity(1);cursor.SetRenderOpacity(1);
+                    fixed.SetVisibility(selected?ui.V.Hidden:ui.V.SelfHitTestInvisible);
+                    for(const label of [left,right,cursor])label.SetVisibility(selected?ui.V.SelfHitTestInvisible:ui.V.Hidden);
+                    // Native function safely waits for nonzero cached geometry; native
+                    // Tick handles the first completed layout and subsequent resizes.
+                    row.UpdateCursorTextPosition();
+                };
                 b.update = m => {
                     fresh.SetStepSize(m.step / (m.max - m.min));
                     fresh.SetValue((m.value - m.min) / (m.max - m.min));
-                    fresh.SetDisplayValue(ui.asText(m.displayValue));
-                    ui.text(row.Text_LeftValue || row.LeftValue, m.minDisplayValue);
-                    ui.text(row.Text_RightValue || row.RightValue, m.maxDisplayValue);
-                    // PBZSettingSlider supplies its native thumb label. Hide the stale row duplicate.
-                    for (const name of ["CurrentValue", "Text_SettingValue"]) if (ui.valid(row[name])) row[name].SetVisibility(ui.V.Collapsed);
+                    b.refreshValue();
                 };
             } else if (model.type === "action") {
                 // Build 26266538 W_SettingBaseButton (used by the Action row)
@@ -239,6 +254,7 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
             const b = bindings.get(this);
             if (!b) return;
             b.row.SetSelected(selected);
+            b.refreshValue?.(selected);
             if (selected) b.state.select(b.id, false);
         }
         OnMouseEnter() { const b = bindings.get(this); if (b?.state.acceptsInput()) b.state.select(b.id, false); }

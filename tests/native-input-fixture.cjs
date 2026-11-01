@@ -16,11 +16,12 @@ function delegate() {
         emit: (...args) => { for (const fn of [...handlers]) fn(...args); } };
 }
 function widget(type = "FixtureWidget") {
-    return { visibility: 0, SetVisibility(value) { this.visibility = value; }, GetVisibility() { return this.visibility; },
+    return { visibility: 0, TickFrequency:1, SetVisibility(value) { this.visibility = value; }, GetVisibility() { return this.visibility; },
         GetClass: () => type, attached: true, RemoveFromParent() { this.attached = false; }, SetSelected() {}, SetFocus() {},
         OnButtonBaseClicked: delegate(), OnRotated: delegate(),
         SetIsInteractionEnabled(value) { this.interactive = value; }, SetIsFocusable() {},
-        SetIsEnabled(value) { this.enabled = value; },
+        SetIsEnabled(value) { this.enabled = value; },SetRenderOpacity(value){this.opacity=value;},
+        OnValueChanged:delegate(),OnMouseCaptureEnd:delegate(),OnControllerCaptureEnd:delegate(),
         // The native Action button has an empty Overlay, not a text widget.
         SetButtonText() {} };
 }
@@ -68,8 +69,8 @@ function fixture(options = {}) {
         BP_SetListItems() {}, RequestRefresh() {}, BP_SetSelectedItem() {}, BP_ScrollItemIntoView() {}
     });
     const ui = {
-        V: { Visible: 0, SelfHitTestInvisible: 1, Collapsed: 2 }, valid: value => !!value,
-        asText: value => value, text() {}, replaceControl() {},
+        V: { Visible: 0, SelfHitTestInvisible: 1, Collapsed: 2, Hidden:3 }, valid: value => !!value,
+        asText: value => value, text(label,value) {if(label)label.text=value;}, replaceControl() {},
         lifetime() {
             const cleanup = [];
             return { live: true, bind(event, fn) {
@@ -79,12 +80,15 @@ function fixture(options = {}) {
                 this.live = false; cleanup.splice(0).forEach(fn => fn());
             } };
         },
-        native(owner,kind) { return kind === "CommonListView" ? list : Object.assign(widget(),{SetBrushFromTexture(){},SetColorAndOpacity(){},SetMinValue(){},SetMaxValue(){},SetStepSize(){},SetValue(){},SetDisplayValue(){}}); },
+        native(owner,kind) { return kind === "CommonListView" ? list : Object.assign(widget(),{SetBrushFromTexture(){},SetColorAndOpacity(){},SetMinValue(){},SetMaxValue(){},SetStepSize(){},SetValue(value){this.value=value;},SetDisplayValue(value){this.displayValue=value;}}); },
         widget(owner, type) {
             if (type === "FixtureRotator") return rotator();
             return Object.assign(widget(), { Button_Action: widget(), Button_Decrease:widget(), Button_Increase:widget(),
             DecreaseOverlay:widget(), IncreaseOverlay:widget(),
-            Slider_SettingValue:widget(),InitCachedTexts(){},Rotator_SettingValue:rotator(), Text_SettingName: {
+            Slider_SettingValue:widget(),InitCachedTexts(){},CurrentValue:widget(),Text_RightValue:widget(),Text_LeftValue:widget(),Text_SettingValue:widget(),
+            SetSelected(selected){this.CurrentValue.SetVisibility(selected?3:1);for(const w of [this.Text_LeftValue,this.Text_RightValue,this.Text_SettingValue])w.SetVisibility(selected?1:3);},
+            UpdateCursorTextPosition(){this.cursorUpdates=(this.cursorUpdates||0)+1;this.cursorNormalizedValue=this.Slider_SettingValue.value;},
+            Rotator_SettingValue:rotator(), Text_SettingName: {
             justification: 2, SetJustification(value) { this.justification=value; }, SetVisibility() {},
             Slot: { alignment: 2, SetHorizontalAlignment(value) { this.alignment=value; } }
         } }); },

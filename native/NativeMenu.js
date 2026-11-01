@@ -149,16 +149,16 @@ function createMenu(UE, puerts, framework, report) {
                 state.editors.select(id);
                 if (state.selected !== id) {
                     const old = state.entries.get(state.selected);
-                    if (old && ui.valid(old.row)) old.row.SetSelected(false);
+                    if (old && ui.valid(old.row)) {old.row.SetSelected(false);old.refreshValue?.(false);}
                     state.selected = id; state.list.BP_SetSelectedItem(token);
                 }
                 const entry = state.entries.get(id);
-                if (entry) entry.row.SetSelected(true);
+                if (entry) {entry.row.SetSelected(true);entry.refreshValue?.(true);}
                 state.details(); panel.IsEnterSecond = true;
                 if (focus) { state.pendingFocus = id; state.list.BP_ScrollItemIntoView(token); state.focusReady(); }
             },
             rowReady(entry) {
-                if (state.selected === entry.id) entry.row.SetSelected(true);
+                if (state.selected === entry.id) {entry.row.SetSelected(true);entry.refreshValue?.(true);}
                 // OnListItemObjectSet can run before Slate constructs the row. EntriesGenerated is the gate.
             },
             focusReady() {

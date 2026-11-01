@@ -1,3 +1,9 @@
+## 0.3.4
+
+Restore the native slider value layout: unselected rows show the current value; selected rows show minimum and maximum endpoints with a separate value following the thumb. Percentage, integer and color-channel values update with mouse, keyboard and controller input. Existing settings are preserved.
+
+Automated checks are recorded during preparation. In-game coverage remains limited to the release acceptance evidence.
+
 ## 0.3.2 · 2026-11-01
 
 - 修复键盘和手柄绑定值空白、点击设置行无法录入的问题。
