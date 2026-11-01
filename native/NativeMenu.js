@@ -3,6 +3,7 @@ const { createSupport } = require("./NativeSupport");
 const { createRows } = require("./NativeRows");
 const { createFooter } = require("./NativeFooter");
 const { createIconLoader } = require("./NativeIcon");
+const { createEditors } = require("../src/Editors");
 const { resolve, gameLanguage } = require("../src/Localization");
 const { words: WORDS } = require("../src/LocaleStrings");
 const TAB = "PbzModConfig";
@@ -31,6 +32,7 @@ function createMenu(UE, puerts, framework, report) {
                 state.locale = gameLanguage(UE, state.locale);
                 framework.setLanguage(state.locale);
                 const pages = framework.pages(), rows = [];
+                state.editors.reconcile(new Map(pages.flatMap(page=>page.rows.map(row=>[row.id,{...row,page}]))));
                 const owners = new Map();
                 for (const page of pages) {
                     owners.set(page.handle.modId, page.handle.ownerToken);
@@ -47,7 +49,7 @@ function createMenu(UE, puerts, framework, report) {
                     for (const row of page.rows) {
                         const model = { ...row, page };
                         if (row.type === "toggle") model.options = [{ value: false, label: state.word("off") }, { value: true, label: state.word("on") }];
-                        rows.push(model);
+                        rows.push(...state.editors.rows(model));
                     }
                     rows.push({ id: page.handle.modId + "/@reset", type: "action", label: state.word("reset"), description: page.title,
                         buttonLabel: state.word("reset"), enabled: true, reset: true, page });
@@ -133,7 +135,7 @@ function createMenu(UE, puerts, framework, report) {
                 for (const [field, value] of [
                     ["Text_SettingName", (m?.section ? m.page.title : m?.label) || ""], ["RichText_Description", m?.description || ""],
                     ["RichText_DisabledDetails", m?.enabled === false ? m.disabledReason : ""],
-                    ["RichText_WarningDetails", m?.page?.persistence?.state === "failed" ? state.word("failed") : m?.page?.persistence?.state === "pending" ? state.word("pending") : ""],
+                    ["RichText_WarningDetails", state.editors.feedback && [m?.id,m?.parentId].includes(state.editors.feedback.id) ? state.word(state.editors.feedback.code==="BINDING_CONFLICT"?"bindingConflict":"editRejected") : m?.page?.persistence?.state === "failed" ? state.word("failed") : m?.page?.persistence?.state === "pending" ? state.word("pending") : ""],
                 ]) {
                     if (!ui.valid(view[field])) continue;
                     ui.text(view[field], value); view[field].SetVisibility(value ? ui.V.SelfHitTestInvisible : ui.V.Collapsed);
@@ -143,6 +145,8 @@ function createMenu(UE, puerts, framework, report) {
             select(id, focus) {
                 const token = state.byId.get(id), m = state.models.get(token);
                 if (!m || m.type === "header" || !state.acceptsInput()) return;
+                if (state.editors.capturing && id !== state.editors.activeId && !id.startsWith(state.editors.activeId + "/@")) return;
+                state.editors.select(id);
                 if (state.selected !== id) {
                     const old = state.entries.get(state.selected);
                     if (old && ui.valid(old.row)) old.row.SetSelected(false);
@@ -169,6 +173,7 @@ function createMenu(UE, puerts, framework, report) {
                 const m = state.models.get(state.byId.get(id));
                 if (!state.acceptsInput() || !m || m.enabled === false) return;
                 state.select(id, false);
+                if (state.editors.edit(m,value)) { state.refresh(); return; }
                 const result = framework.edit(m.page.handle, m.key, value, m.page.revision);
                 if (!result.ok) report({ code: "EDIT_REJECTED", id, error: result.error });
                 // Re-read the owner immediately; a second input cannot reuse the previous revision.
@@ -193,12 +198,15 @@ function createMenu(UE, puerts, framework, report) {
                 const m = state.models.get(state.byId.get(id));
                 if (!m || m.enabled === false || !state.acceptsInput()) return;
                 state.select(id, false);
+                if (state.editors.action(m)) { state.refresh(); return; }
                 if (m.section) {
+                    state.editors.close();
                     expanded.set(m.page.handle.modId, expanded.get(m.page.handle.modId) !== true);
                     state.pendingFocus = id; state.queueRefresh();
                     return;
                 }
                 if (m.reset) {
+                    state.editors.close();
                     state.confirming = true; state.pendingFocus = id;
                     const handle = m.page.handle;
                     const action = UE.AsyncAction_ShowConfirmation.ShowConfirmationYesNo(panel, undefined, ui.asText(state.word("confirm")));
@@ -226,7 +234,8 @@ function createMenu(UE, puerts, framework, report) {
                 const index = ids.indexOf(id), target = ids[Math.max(0, Math.min(ids.length - 1, index + delta))];
                 if (target) state.select(target, true);
             },
-            key(id, name, repeat) {
+            key(id, name, repeat, modifiers) {
+                if (state.editors.key(name,repeat,modifiers)) { state.refresh(); return true; }
                 if (["Up", "W", "Gamepad_DPad_Up", "Gamepad_LeftStick_Up"].includes(name)) state.move(id, -1);
                 else if (["Down", "S", "Gamepad_DPad_Down", "Gamepad_LeftStick_Down"].includes(name)) state.move(id, 1);
                 else if (["Left", "A", "Gamepad_DPad_Left", "Gamepad_LeftStick_Left"].includes(name)) state.step(id, -1);
@@ -240,6 +249,7 @@ function createMenu(UE, puerts, framework, report) {
                 return true;
             },
             analog(id, name, value) {
+                if (state.editors.capturing) return true;
                 if (name !== "Gamepad_LeftX" && name !== "Gamepad_LeftY") return false;
                 if (Math.abs(value) < 0.5) { state.heldAxis = null; return true; }
                 const direction = name + Math.sign(value), now = Date.now();
@@ -255,7 +265,7 @@ function createMenu(UE, puerts, framework, report) {
                 state.hostScope.bind(host.OnHostDeactivated, () => state.cover());
                 state.hostScope.bind(host.OnHostReactivated, () => state.resume());
             },
-            cover() { state.covered = true; state.pendingFocus = state.selected || state.pendingFocus; state.flush(); },
+            cover() { state.covered = true; state.editors.close(); state.pendingFocus = state.selected || state.pendingFocus; state.flush(); },
             resume() {
                 if (state.disposed) return;
                 state.covered = false;
@@ -275,7 +285,11 @@ function createMenu(UE, puerts, framework, report) {
                 state.focusReady();
             },
             hide() {
-                state.active = false; state.pendingFocus = null; state.flush();
+                // Audio stop callbacks can re-enter menu actions. Revoke input
+                // before calling provider-owned cleanup, including during dispose.
+                state.active = false;
+                state.editors.close();
+                state.pendingFocus = null; state.flush();
                 if (state.layout) {
                     state.layout.detailRoot.SetVisibility(ui.V.Collapsed);
                     if (state.detailsVisibility !== undefined && ui.valid(state.layout.originalDetails)) {
@@ -285,7 +299,7 @@ function createMenu(UE, puerts, framework, report) {
             },
             dispose() {
                 if (state.disposed) return;
-                state.hide(); state.disposed = true;
+                state.disposed = true; state.hide();
                 if (state.refreshTimer !== null) clearTimeout(state.refreshTimer);
                 state.hostScope?.dispose(); state.scope.dispose(); rowFactory.releaseState(state);
                 for (const token of state.models.keys()) tokenOwners.delete(token);
@@ -312,6 +326,7 @@ function createMenu(UE, puerts, framework, report) {
                 states.delete(panel);
             }
         };
+        state.editors = createEditors(framework,{word:state.word,refresh:()=>state.queueRefresh()});
         states.set(panel, state);
         try {
             state.tabs = panel.W_OverlayTabList_C;

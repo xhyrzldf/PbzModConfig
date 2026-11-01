@@ -15,8 +15,8 @@ SOURCE_SHA256 = "51aeade8f90f7b3a2ba0e6c4192db9079fc3f9e0628753be07cffa8726eb2ce
 ANCHOR = "exports.SettingPanelMixinInterface = SettingPanelMixinInterface;"
 PATCH = '\ntry { require("../../PbzModConfig/native/Entry").install(SettingPanelMixinInterface, UE, puerts_1, exports, {clearPendingSelect, cancelSelectWidgetFocusTimer}); } catch (error) { console.warn("[PbzModConfig] BOOT_FAILED " + String(error)); }\n'
 FILES = (
-    "provider/Protocol.js", "provider/Schema.js", "provider/ConfigStore.js", "provider/Translations.js",
-    "provider/Journal.js", "provider/EasyCsvIO.js", "provider/StorageRoot.js", "src/Framework.js", "src/Localization.js", "src/LocaleStrings.js", "src/Metadata.js",
+    "provider/Protocol.js", "provider/Schema.js", "provider/Controls.js", "provider/Compatibility.js", "provider/ConfigStore.js", "provider/Translations.js",
+    "provider/Journal.js", "provider/EasyCsvIO.js", "provider/StorageRoot.js", "src/Framework.js", "src/Editors.js", "src/Localization.js", "src/LocaleStrings.js", "src/Metadata.js",
     "native/NativeSupport.js", "native/NativeRows.js", "native/NativeMenu.js", "native/Entry.js", "native/NativeFooter.js", "native/NativeIcon.js",
 )
 ASSETS = ("assets/modconfig-icon.png",)

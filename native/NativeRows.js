@@ -1,5 +1,14 @@
 "use strict";
+const { colorChannels } = require("../provider/Controls");
 const EDITORS = "/Game/PBZContent/UI/Settings/Editors/";
+function heldModifiers(UE, owner) {
+    // Build 26266538 AbilityWidget.isHeldNodeNavigationKeyDown uses this router.
+    // PlayerController.IsInputKeyDown is false under the native menu input mode.
+    const router = UE.SubsystemBlueprintLibrary.GetLocalPlayerSubsystem(owner, UE.PBZUIActionRouterBase.StaticClass());
+    if (!router || typeof router.IsUIKeyHeld !== "function") throw new Error("MODIFIER_STATE_UNAVAILABLE");
+    return Object.fromEntries([["Ctrl","Control"],["Alt","Alt"],["Shift","Shift"],["Cmd","Command"]].map(([name,key])=>
+        [name,["Left","Right"].some(side=>router.IsUIKeyHeld(new UE.Key(side+key)))]));
+}
 // Language names remain in their own language even while the menu is Chinese.
 // The game's rotator otherwise chooses a font from the menu language alone.
 function choiceFontFamily(value, locale) {
@@ -61,7 +70,12 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
         const b = bindings.get(host);
         if (!b || !b.state.acceptsInput()) return UE.WidgetBlueprintLibrary.Unhandled();
         const name = String(UE.KismetInputLibrary.GetKey(event).KeyName);
-        return b.state.key(b.state.selected || b.id, name, UE.KismetInputLibrary.InputEvent_IsRepeat(event))
+        let modifiers;
+        if (b.state.editors.capturing) {
+            try { modifiers = heldModifiers(UE,host); }
+            catch(e) { report({code:"KEY_CAPTURE_FAILED",detail:String(e)}); b.state.editors.cancel();return UE.WidgetBlueprintLibrary.Handled(); }
+        }
+        return b.state.key(b.state.selected || b.id, name, UE.KismetInputLibrary.InputEvent_IsRepeat(event), modifiers)
             ? UE.WidgetBlueprintLibrary.Handled() : UE.WidgetBlueprintLibrary.Unhandled();
     }
     function attach(host, item) {
@@ -150,6 +164,28 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
             } else {
                 b.update = () => {};
             }
+            if (model.colorPreview) {
+                const swatch = ui.native(row,"Image"), texture=UE.Object.Load("/Engine/EngineResources/WhiteSquareTexture.WhiteSquareTexture");
+                if(!texture)throw new Error("COLOR_PREVIEW_TEXTURE_MISSING");
+                swatch.SetBrushFromTexture(texture,false);swatch.SetVisibility(ui.V.HitTestInvisible);
+                const previewSlot=root.AddChild(swatch);
+                if(typeof previewSlot.SetAnchors === "function") {
+                    const anchors=new UE.Anchors();anchors.Minimum=new UE.Vector2D(1,0.5);anchors.Maximum=new UE.Vector2D(1,0.5);
+                    previewSlot.SetAnchors(anchors);previewSlot.SetAlignment(new UE.Vector2D(1,0.5));
+                    previewSlot.SetPosition(new UE.Vector2D(-220,0));previewSlot.SetSize(new UE.Vector2D(28,28));
+                } else {
+                    if(typeof swatch.SetDesiredSizeOverride === "function")swatch.SetDesiredSizeOverride(new UE.Vector2D(28,28));
+                    previewSlot.SetHorizontalAlignment(UE.EHorizontalAlignment.HAlign_Right);previewSlot.SetVerticalAlignment(UE.EVerticalAlignment.VAlign_Center);
+                    const padding=new UE.Margin();padding.Right=220;previewSlot.SetPadding(padding);
+                }
+                scope.own(()=>swatch.RemoveFromParent());
+                const update=b.update;
+                b.update=m=>{
+                    update(m);
+                    const channels=colorChannels(m.colorPreview), linear=v=>{v/=255;return v<=0.04045?v/12.92:Math.pow((v+0.055)/1.055,2.4);};
+                    swatch.SetColorAndOpacity(new UE.LinearColor(...channels.slice(0,3).map(linear),(channels[3]??255)/255));
+                };
+            }
             b.refresh = m => {
                 b.applying = true;
                 try {
@@ -198,6 +234,21 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
         }
         OnAddedToFocusPath() { const b = bindings.get(this); if (b?.state.acceptsInput()) b.state.select(b.id, false); }
         OnPreviewKeyDown(geometry, event) { return key(this, event); }
+        OnKeyUp(geometry,event) {
+            const b=bindings.get(this),name=String(UE.KismetInputLibrary.GetKey(event).KeyName);
+            return b?.state.acceptsInput() && b.state.editors.keyUp(name) ? UE.WidgetBlueprintLibrary.Handled() : UE.WidgetBlueprintLibrary.Unhandled();
+        }
+        OnPreviewMouseButtonDown(geometry,event) {
+            const b=bindings.get(this);
+            if(!b?.state.acceptsInput() || !b.state.editors.capturing)return UE.WidgetBlueprintLibrary.Unhandled();
+            const model=b.state.models.get(b.item);
+            if(["cancel","clear"].includes(model?.editorAction))return UE.WidgetBlueprintLibrary.Unhandled();
+            try {
+                const name=String(UE.KismetInputLibrary.PointerEvent_GetEffectingButton(event).KeyName);
+                b.state.editors.key(name,false,heldModifiers(UE,this));b.state.refresh();
+            } catch(e) {report({code:"KEY_CAPTURE_FAILED",detail:String(e)});b.state.editors.cancel();}
+            return UE.WidgetBlueprintLibrary.Handled();
+        }
         OnAnalogValueChanged(geometry, event) {
             const b = bindings.get(this);
             if (!b?.state.acceptsInput()) return UE.WidgetBlueprintLibrary.Unhandled();
@@ -214,4 +265,4 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
         for (const [host, binding] of Array.from(bindings)) if (binding.state === state) release(host);
     } };
 }
-module.exports = { createRows, choiceFontFamily, createChoiceTypography };
+module.exports = { createRows, choiceFontFamily, createChoiceTypography, heldModifiers };

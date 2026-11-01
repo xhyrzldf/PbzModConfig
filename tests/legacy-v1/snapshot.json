@@ -1,0 +1,11 @@
+{
+  "sourceCommit": "20a7ebaea95bce15ee12b2155ecccebd93dd872c",
+  "version": "0.2.7-preview",
+  "sha256": {
+    "provider/Protocol.js": "dd91e83e390a65a613ff157b7ac0e5866a08bac55c767dbb16efc2bc9ae94cbc",
+    "provider/Schema.js": "553bcc690fbf521c554ddfbad8052a2ec2e3629798addc0409b8083b964ee763",
+    "provider/ConfigStore.js": "54e3c7aabf3f13388a67a4708ff4a2c0730aa9809816eafaf21a92ded5897118",
+    "provider/Journal.js": "1059ffcf6c015f5a819d1e9b6ba7af1444f221ee7247b382c7bddc7f24210c94",
+    "src/Framework.js": "4cc611249c37300b888c526fe6d1c74292ecfb1e3746a30eb500e0e68e8661d3"
+  }
+}

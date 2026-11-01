@@ -3,12 +3,19 @@ const S = require("../provider/Schema");
 const L = require("./Localization");
 function createFramework(hub, options = {}) {
     const records = new Map(), listeners = new Set();
-    let disposed = false, locale = "zhHans";
+    let disposed = false, locale = "zhHans", playback = null, previewGeneration = 0;
     const report = event => { try { (options.report || (e => console.warn("[PbzModConfig] " + JSON.stringify(e))))(event); } catch (_) {} };
+    function stopPreview() {
+        const generation = ++previewGeneration;
+        const old = playback; playback = null;
+        if (old) try { old.stop(); } catch (e) { report({ code: "PREVIEW_STOP_FAILED", detail: String(e) }); }
+        return generation;
+    }
     function emit(event) {
         for (const listener of Array.from(listeners)) try { listener(event); } catch (e) { report({ code: "VIEW_FAILED", detail: String(e) }); }
     }
     function fault(record, operation, error) {
+        if (playback?.record === record) stopPreview();
         const next = { code: "PROVIDER_FAILED", operation, detail: String(error) };
         if (JSON.stringify(record.error) === JSON.stringify(next)) return;
         record.error = next;
@@ -21,15 +28,20 @@ function createFramework(hub, options = {}) {
             const value = record.descriptor.read();
             if (!value || !Number.isSafeInteger(value.revision) || value.revision < 0 ||
                 !["saved", "pending", "failed"].includes(value.persistence?.state) ||
-                Object.keys(S.validatePatch(record.schema, value.values)).length ||
+                Object.keys(S.validatePatch(record.schema, value.values, value.values)).length ||
                 Array.from(record.schema.values.keys()).some(k => !S.own(value.values, k))) throw new Error("INVALID_SNAPSHOT");
             if (record.revision !== undefined && value.revision < record.revision) throw new Error("REVISION_REGRESSED");
             record.revision = value.revision;
+            if (playback?.record === record) {
+                const e = record.schema.entries.get(playback.key);
+                if (!e || value.values[e.key] !== playback.value || !S.enabled(e, value.values) || !S.visible(e, value.values)) stopPreview();
+            }
             record.error = null;
             return S.copy(value);
         } catch (e) { fault(record, "read", e); return null; }
     }
     function release(record) {
+        if (playback?.record === record) stopPreview();
         record.active = false;
         try { record.unsubscribe?.(); } catch (e) { report({ code: "UNSUBSCRIBE_FAILED", modId: record.modId, detail: String(e) }); }
     }
@@ -47,6 +59,10 @@ function createFramework(hub, options = {}) {
             const record = { ...item, active: true, schema: null, error: null };
             records.set(item.modId, record);
             try {
+                if (typeof record.descriptor.getExtendedDescriptor === "function") {
+                    const extended = record.descriptor.getExtendedDescriptor(1);
+                    if (extended) record.descriptor = extended;
+                }
                 record.schema = S.compile(record.descriptor, report);
                 // Subscribe first, then read. Providers may synchronously notify on subscribe.
                 record.unsubscribe = record.descriptor.subscribe(() => {
@@ -76,7 +92,7 @@ function createFramework(hub, options = {}) {
         if (!current) return { ok: false, error: "PROVIDER_FAILED" };
         if (baseRevision !== undefined && current.revision !== baseRevision) return { ok: false, error: "REVISION_CONFLICT", ...current };
         if (operation === "apply") {
-            const errors = S.validatePatch(record.schema, argument);
+            const errors = S.validatePatch(record.schema, argument, current.values);
             if (Object.keys(errors).length) return { ok: false, error: "VALIDATION_FAILED", fields: errors, ...current };
             for (const key of Object.keys(argument)) {
                 const entry = record.schema.entries.get(key);
@@ -95,7 +111,7 @@ function createFramework(hub, options = {}) {
                 fn.call(record.descriptor, argument, { baseRevision: current.revision, origin: "PbzModConfig" });
             if (!result || typeof result.ok !== "boolean" || typeof result.then === "function" ||
                 !Number.isSafeInteger(result.revision) || !S.plain(result.values) ||
-                Object.keys(S.validatePatch(record.schema, result.values)).length ||
+                Object.keys(S.validatePatch(record.schema, result.values, result.values)).length ||
                 Array.from(record.schema.values.keys()).some(k => !S.own(result.values, k))) throw new Error("INVALID_RESULT");
             const latest = read(record);
             emit({ type: "values", modId: record.modId });
@@ -120,7 +136,7 @@ function createFramework(hub, options = {}) {
                         label: L.resolve(entry.label, locale), description: L.resolve(entry.description, locale),
                         value: current.values[entry.key], displayValue: L.format(current.values[entry.key], entry, locale),
                         enabled: S.enabled(entry, current.values), disabledReason: S.enabled(entry, current.values) ? "" : L.resolve(entry.disabledReason, locale),
-                        min: entry.min, max: entry.max, step: entry.step,
+                        min: entry.min, max: entry.max, step: entry.step, control: entry,
                         minDisplayValue: entry.type === "number" ? L.format(entry.min, entry, locale) : undefined,
                         maxDisplayValue: entry.type === "number" ? L.format(entry.max, entry, locale) : undefined,
                         options: entry.options?.map(o => ({ value: o.value, label: L.resolve(o.label, locale) }))
@@ -132,9 +148,31 @@ function createFramework(hub, options = {}) {
         edit(handle, key, value, revision) { return operate(handle, "apply", { [key]: value }, revision); },
         reset(handle, groupId, revision) { return operate(handle, "reset", groupId, revision); },
         action(handle, key, revision) { return operate(handle, "invokeAction", key, revision); },
+        preview(handle, key, revision) {
+            const generation = stopPreview();
+            if (generation !== previewGeneration || disposed) return { ok: false, error: "PREVIEW_CHANGED" };
+            const record = lookup(handle), current = record && read(record), entry = record?.schema?.entries.get(key);
+            if (!current) return { ok: false, error: "STALE_PROVIDER" };
+            if (revision !== undefined && revision !== current.revision) return { ok: false, error: "REVISION_CONFLICT" };
+            if (entry?.type !== "sound" || typeof record.descriptor.previewSound !== "function") return { ok: false, error: "PREVIEW_UNAVAILABLE" };
+            if (!S.enabled(entry, current.values) || !S.visible(entry, current.values)) return { ok: false, error: "DISABLED" };
+            try {
+                const result = record.descriptor.previewSound(key, { baseRevision: current.revision });
+                if (!result?.ok || typeof result.stop !== "function") return { ok: false, error: result?.error || "PREVIEW_FAILED" };
+                // Close/cover may run inside the owner's start callback, before
+                // its stop function exists. Do not resurrect that canceled start.
+                if (generation !== previewGeneration) { result.stop(); return { ok: false, error: "PREVIEW_CHANGED" }; }
+                playback = { record, key, value: current.values[key], stop: result.stop };
+                const latest = lookup(handle) === record && read(record);
+                if (!latest || !record.active || !playback) { stopPreview(); return { ok: false, error: "PREVIEW_CHANGED" }; }
+                return { ok: true };
+            } catch (e) { stopPreview(); report({ code: "PREVIEW_FAILED", detail: String(e) }); return { ok: false, error: "PREVIEW_FAILED" }; }
+        },
+        stopPreview,
         flushAll() { return Array.from(records.values()).map(r => ({ modId: r.modId, result: operate(r, "flush") })); },
         dispose() {
             if (disposed) return;
+            stopPreview();
             const results = this.flushAll();
             disposed = true;
             unsubscribeHub();

@@ -40,7 +40,9 @@ function resolve(value, locale) {
 }
 function format(value, entry, locale) {
     if (entry.type === "toggle") return resolve(value ? words.on : words.off, locale);
-    if (entry.type === "choice") return resolve(entry.options.find(o => o.value === value)?.label, locale);
+    if (entry.type === "choice" || entry.type === "sound") return resolve(entry.options.find(o => o.value === value)?.label, locale);
+    if (entry.type === "color") return value;
+    if (entry.type === "keybind") return value || resolve(words.unbound, locale);
     if (entry.type === "number") {
         const f = entry.format || "F0", percent = f[0] === "P";
         const digits = Number(f[1]);

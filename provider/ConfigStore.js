@@ -8,6 +8,10 @@ function createStore(descriptor, storage, options = {}) {
     const delay = options.delay ?? 250, maxDelay = options.maxDelay ?? 1500;
     let values = { ...schema.defaults }, revision = 0, dirty = false, disposed = false, blocked = false;
     let timer = null, deadline = null, persistence = { state: "saved" };
+    const previews = new Set();
+    function stopPreviews() {
+        for (const stop of Array.from(previews)) stop();
+    }
     const snapshot = () => S.deepFreeze({ revision, values: { ...values }, persistence: { ...persistence } });
     function emit(origin) {
         const event = { ...snapshot(), origin };
@@ -57,7 +61,7 @@ function createStore(descriptor, storage, options = {}) {
                 record = options.migrate(S.copy(record), descriptor.schemaVersion);
                 if (!record || record.schemaVersion !== descriptor.schemaVersion) throw new Error("INVALID_MIGRATION");
             }
-            const errors = S.validatePatch(schema, record.values);
+            const errors = S.validatePatch(schema, record.values, schema.defaults);
             if (Object.keys(errors).length) throw new Error("INVALID_STORED_VALUES: " + JSON.stringify(errors));
             if (!Number.isSafeInteger(record.revision) || record.revision < 0) throw new Error("INVALID_REVISION");
             values = { ...values, ...record.values };
@@ -78,11 +82,17 @@ function createStore(descriptor, storage, options = {}) {
     function apply(patch, context = {}) {
         if (disposed) return result(false, "PROVIDER_DISPOSED");
         if (context.baseRevision !== undefined && context.baseRevision !== revision) return result(false, "REVISION_CONFLICT");
-        const errors = S.validatePatch(schema, patch);
+        const errors = S.validatePatch(schema, patch, values);
         if (Object.keys(errors).length) return result(false, "VALIDATION_FAILED", errors);
         const changed = Object.entries(patch).some(([k, v]) => values[k] !== v);
         if (!changed) return result(true);
         if (revision >= Number.MAX_SAFE_INTEGER) return result(false, "REVISION_OVERFLOW");
+        stopPreviews();
+        // An owner's stop callback may synchronously change or dispose its store.
+        if (disposed) return result(false, "PROVIDER_DISPOSED");
+        if (context.baseRevision !== undefined && context.baseRevision !== revision) return result(false, "REVISION_CONFLICT");
+        const afterStop = S.validatePatch(schema, patch, values);
+        if (Object.keys(afterStop).length) return result(false, "VALIDATION_FAILED", afterStop);
         values = { ...values, ...patch };
         revision++;
         queueSave();
@@ -109,6 +119,28 @@ function createStore(descriptor, storage, options = {}) {
             return apply(patch, { ...context, origin: context.origin || "reset" });
         },
         flush,
+        previewSound(key, context = {}) {
+            stopPreviews();
+            if (disposed) return { ok: false, error: "PROVIDER_DISPOSED" };
+            if (context.baseRevision !== undefined && context.baseRevision !== revision) return { ok: false, error: "REVISION_CONFLICT" };
+            const entry = schema.entries.get(key);
+            if (!entry || entry.type !== "sound" || typeof options.sounds?.[key] !== "function") return { ok: false, error: "PREVIEW_UNAVAILABLE" };
+            if (!S.enabled(entry, values) || !S.visible(entry, values)) return { ok: false, error: "DISABLED" };
+            try {
+                const startedRevision = revision;
+                const stop = options.sounds[key](values[key]);
+                if (typeof stop !== "function") throw new Error("PREVIEW_STOP_REQUIRED");
+                let live = true;
+                const finish = () => {
+                    if (!live) return;
+                    live = false; previews.delete(finish);
+                    try { stop(); } catch (e) { report({ code: "PREVIEW_STOP_FAILED", detail: String(e) }); }
+                };
+                previews.add(finish);
+                if (disposed || revision !== startedRevision) { finish(); return { ok: false, error: "PREVIEW_CHANGED" }; }
+                return { ok: true, stop: finish };
+            } catch (e) { report({ code: "PREVIEW_FAILED", detail: String(e) }); return { ok: false, error: "PREVIEW_FAILED" }; }
+        },
         invokeAction(actionId, context = {}) {
             if (disposed) return result(false, "PROVIDER_DISPOSED");
             if (context.baseRevision !== undefined && context.baseRevision !== revision) return result(false, "REVISION_CONFLICT");
@@ -123,6 +155,7 @@ function createStore(descriptor, storage, options = {}) {
         },
         dispose() {
             if (disposed) return result(true);
+            stopPreviews();
             const outcome = flush();
             if (!outcome.ok) return outcome; // caller can retry; do not discard dirty ownership.
             disposed = true;

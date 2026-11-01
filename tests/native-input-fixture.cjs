@@ -19,11 +19,16 @@ function widget() {
 function fixture(options = {}) {
     const reports = [], root = {}, calls = [];
     // A normal optional provider populates the menu, as a business mod does.
-    const provider = createDemo(memoryIO(), { root, modId: "PbzMapTracker" });
+    const provider = options.createProvider ? options.createProvider(root) : createDemo(memoryIO(), { root, modId: "PbzMapTracker" });
     const framework = createFramework(getHub(root), { report: event => reports.push(event) });
     let RowHost;
     const UE = {
-        Class: { Load: name => name }, Object: {}, BuiltinText: {},
+        Class: { Load: name => name }, Object: {Load:()=>({})}, BuiltinText: {},
+        Key: class {constructor(name){this.KeyName=name;}},
+        Vector2D: class {constructor(x,y){this.X=x;this.Y=y;}}, Anchors:class{},LinearColor:class{},
+        SubsystemBlueprintLibrary:{GetLocalPlayerSubsystem:()=>({IsUIKeyHeld:key=>(options.heldKeys||[]).includes(key.KeyName)})},
+        PBZUIActionRouterBase:{StaticClass:()=>({})},
+        SGameAIFunctionLibrary:{GetClassDefaultObject:()=>({Font:{FontObject:{},TypefaceFontName:"Regular",LetterSpacing:0}})},
         GameSettingCollection: { StaticClass: () => "Collection" }, NewObject: () => ({}), NewArray: () => array([]),
         Margin: class { constructor() { this.Left = this.Right = this.Top = this.Bottom = 0; } },
         PBZTabDescriptor: class { constructor() { this.TabText = {}; } },
@@ -33,6 +38,7 @@ function fixture(options = {}) {
         KismetTextLibrary: { Conv_TextToString: value => value },
         KismetInputLibrary: {
             GetKey: event => ({ KeyName: event.key }), InputEvent_IsRepeat: event => !!event.repeat,
+            PointerEvent_GetEffectingButton:event=>({KeyName:event.key}),
             GetAnalogValue: event => event.value
         },
         WidgetBlueprintLibrary: { Handled: () => "handled", Unhandled: () => "unhandled" }
@@ -52,8 +58,9 @@ function fixture(options = {}) {
                 this.live = false; cleanup.splice(0).forEach(fn => fn());
             } };
         },
-        native: () => list,
-        widget() { return Object.assign(widget(), { Button_Action: widget(), Text_SettingName: {
+        native(owner,kind) { return kind === "CommonListView" ? list : Object.assign(widget(),{SetBrushFromTexture(){},SetColorAndOpacity(){},SetMinValue(){},SetMaxValue(){},SetStepSize(){},SetValue(){},SetDisplayValue(){}}); },
+        widget() { return Object.assign(widget(), { Button_Action: widget(), Button_Decrease:widget(), Button_Increase:widget(),
+            Slider_SettingValue:widget(),InitCachedTexts(){},Rotator_SettingValue:Object.assign(widget(),{Text:{Font:{},SetFont(){}},PopulateTextLabels(){},SetSelectedItem(){}}), Text_SettingName: {
             justification: 2, SetJustification(value) { this.justification=value; }, SetVisibility() {},
             Slot: { alignment: 2, SetHorizontalAlignment(value) { this.alignment=value; } }
         } }); },
@@ -95,7 +102,7 @@ function fixture(options = {}) {
     if (!state.entries.has(id)) throw new Error("Fixture row failed to bind: " + JSON.stringify(reports));
     state.selected = id;
     const originalAction=state.action;
-    for (const name of ["move", "step", "action"]) state[name] = (...args) => calls.push([name, ...args]);
+    if(!options.liveActions)for (const name of ["move", "step", "action"]) state[name] = (...args) => calls.push([name, ...args]);
     return { state, host, id, calls, reports,
         bindHeader() {
             originalAction(id); state.refresh();
@@ -106,6 +113,13 @@ function fixture(options = {}) {
             return state.entries.get(header[1].id);
         },
         key: (key, repeat = false) => host.OnPreviewKeyDown({}, { key, repeat }),
+        bind(id) {
+            const h=new RowHost();
+            h.WidgetTree={RootWidget:{GetChildrenCount:()=>0,AddChild:()=>({SetAnchors(){},SetAlignment(){},SetPosition(){},SetSize(){}})}};
+            h.OnListItemObjectSet(state.byId.get(id));state.selected=id;
+            if(!state.entries.has(id))throw Error("Row failed: "+JSON.stringify(reports));
+            return h;
+        },
         analog: (key, value) => host.OnAnalogValueChanged({}, { key, value }),
         dispose() { state.dispose(); provider.dispose(); }
     };

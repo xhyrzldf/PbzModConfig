@@ -1,6 +1,6 @@
 "use strict";
 module.exports = Object.freeze({
-    version: "0.2.9-preview",
+    version: "0.3.0",
     author: "皮一下就很凡@Bilibili",
     authorUrl: "https://space.bilibili.com/26786884"
 });

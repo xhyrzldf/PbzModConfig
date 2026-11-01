@@ -57,7 +57,7 @@ function getHub(root = globalThis, report = event => console.warn("[PbzModConfig
     return hub;
 }
 function publishOptional(descriptor, root = globalThis, report) {
-    try { return getHub(root, report).publish(descriptor); }
+    try { return getHub(root, report).publish(require("./Compatibility").compatibleDescriptor(descriptor)); }
     catch (e) {
         const event = { code: "REGISTRATION_FAILED", modId: descriptor?.modId, detail: String(e) };
         try { (report || (x => console.warn("[PbzModConfig] " + JSON.stringify(x))))(event); } catch (_) {}
