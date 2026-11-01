@@ -1,7 +1,45 @@
 "use strict";
 const EDITORS = "/Game/PBZContent/UI/Settings/Editors/";
+// Language names remain in their own language even while the menu is Chinese.
+// The game's rotator otherwise chooses a font from the menu language alone.
+function choiceFontFamily(value, locale) {
+    const text = String(value ?? "");
+    if (/[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/.test(text)) return "KR";
+    if (/[\u0400-\u052f]/.test(text)) return "RU";
+    if (/[\u3400-\u9fff]/.test(text)) return text === "繁體中文" || locale === "zhHant" ? "TC" : "CN";
+    if (/[A-Za-z\u00c0-\u024f]/.test(text)) return "EN";
+    return ({ zhHans: "CN", zhHant: "TC", ko: "KR", ru: "RU" })[locale] || "EN";
+}
+function createChoiceTypography(UE) {
+    const styles = new Map();
+    return (rotator, value, locale) => {
+        // Build 26266538 W_SettingBaseRotator: Construct casts MyText to
+        // PBZCommonLocText and stores it in Text. Both refer to the same widget.
+        const label = rotator.Text || rotator.MyText;
+        if (!label || typeof label.SetFont !== "function") throw new Error("CHOICE_TEXT_FONT_UNAVAILABLE");
+        const suffix = choiceFontFamily(value, locale);
+        if (!styles.has(suffix)) {
+            const base = ["KR", "RU", "TC"].includes(suffix)
+                ? "/Game/PBZContent/UI/Foundation/Text/Textstyle/"
+                : "/Game/PBZContent/UI/UINew/System/Character/";
+            const name = "Textstyle_Main_" + suffix;
+            const style = UE.SGameAIFunctionLibrary.GetClassDefaultObject(UE.Class.Load(base + name + "." + name + "_C"));
+            if (!style?.Font?.FontObject) throw new Error("CHOICE_FONT_ASSET_MISSING: " + suffix);
+            styles.set(suffix, style);
+        }
+        const source = styles.get(suffix).Font, font = label.Font;
+        // Keep the row's size, outline and material. StartMenu.js uses SetFont
+        // after SetPBZFormatText too; applying it after selection avoids the
+        // localization decorator replacing the chosen face with the UI font.
+        font.FontObject = source.FontObject;
+        font.TypefaceFontName = source.TypefaceFontName;
+        font.LetterSpacing = source.LetterSpacing;
+        label.SetFont(font);
+    };
+}
 function createRows(UE, puerts, ui, tokenOwners, report) {
     const classes = new Map(), bindings = new Map();
+    const styleChoice = createChoiceTypography(UE);
     function cls(kind) {
         const name = "W_SettingsListEntry_" + kind;
         if (!classes.has(kind)) {
@@ -72,7 +110,9 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
                     const labels = UE.NewArray(UE.BuiltinText);
                     current.options.forEach(option => labels.Add(ui.asText(option.label)));
                     fresh.PopulateTextLabels(labels);
-                    fresh.SetSelectedItem(Math.max(0, current.options.findIndex(option => option.value === current.value)));
+                    const index = Math.max(0, current.options.findIndex(option => option.value === current.value));
+                    fresh.SetSelectedItem(index);
+                    styleChoice(fresh, current.options[index]?.label, state.locale);
                 };
             } else if (model.type === "number") {
                 const old = row.Slider_SettingValue, fresh = ui.native(row, old.GetClass());
@@ -174,4 +214,4 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
         for (const [host, binding] of Array.from(bindings)) if (binding.state === state) release(host);
     } };
 }
-module.exports = { createRows };
+module.exports = { createRows, choiceFontFamily, createChoiceTypography };

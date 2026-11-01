@@ -2,6 +2,25 @@
 const {test}=require("node:test"),assert=require("node:assert/strict");
 const {fixture}=require("./native-input-fixture.cjs");
 const {gameLanguage}=require("../src/Localization");
+const {catalogs,signatures,regionalSignatures}=require("../src/LocaleStrings");
+test("主播模式中西语地区由第二个原生词条区分",()=>{
+    for(const locale of ["es-ES","es-419"]){
+        const UE={KismetTextLibrary:{Conv_TextToString:value=>value},
+            KismetInternationalizationLibrary:{GetCurrentLanguage:()=>"en-US"},
+            PBZBlueprintFunctionLibrary:{MakeTextByKey:key=>key===regionalSignatures.key?regionalSignatures.values[locale]:signatures[locale]}};
+        assert.equal(gameLanguage(UE,"ko"),locale);
+    }
+});
+test("七语在实际配置页刷新且西语保留地区",t=>{
+    const options={engineLanguage:"en",menuText:"NEW GAME"},f=fixture(options);t.after(()=>f.dispose());
+    for(const locale of Object.keys(catalogs)){
+        options.menuText=signatures[locale];options.engineLanguage=locale;f.state.refresh();
+        assert.equal(f.state.locale,locale);assert.equal(f.state.word("tab"),catalogs[locale].tab);
+        assert.equal(f.state.word("on"),catalogs[locale].on);assert.equal(f.state.word("confirm"),catalogs[locale].confirm);
+    }
+    options.engineLanguage="es-MX";f.state.refresh();assert.equal(f.state.locale,"es-419");
+    options.engineLanguage="";f.state.refresh();assert.equal(f.state.locale,"es-419");
+});
 test("主播模式式语言分离仍按原生中文刷新整个配置页",t=>{
     const options={engineLanguage:"en",menuText:"新游戏"},f=fixture(options);t.after(()=>f.dispose());
     assert.equal(f.state.locale,"zhHans");assert.equal(f.state.word("on"),"开启");

@@ -1,18 +1,4 @@
 "use strict";
-const { createTranslations } = require("../provider/Translations");
-// Add a language catalog here. Controls and persisted values never depend on translated text.
-const catalogs = {
-    zhHans: {
-        tab: "模组", reset: "恢复默认", confirm: "恢复此模组的默认设置？",
-        unavailable: "暂不可用", empty: "暂无可配置的模组",
-        failed: "保存失败，当前更改尚未写入文件。", pending: "正在保存…", off: "关闭", on: "开启",
-        expand: "展开", collapse: "收起", version: "版本", author: "作者："
-    },
-    en: {
-        tab: "Mods", reset: "Reset to defaults", confirm: "Reset this mod's settings to their defaults?",
-        unavailable: "Unavailable", empty: "No mod settings available",
-        failed: "Couldn't save your changes.", pending: "Saving…", off: "Off", on: "On",
-        expand: "Expand", collapse: "Collapse", version: "Version", author: "By "
-    }
-};
-module.exports = { words: createTranslations(catalogs) };
+const {createTranslations}=require("../provider/Translations");
+const data={"catalogs":{"zhHans":{"tab":"模组","reset":"恢复默认","confirm":"恢复此模组的默认设置？","unavailable":"暂不可用","empty":"暂无可配置的模组","failed":"保存失败，当前更改尚未写入文件。","pending":"正在保存…","off":"关闭","on":"开启","expand":"展开","collapse":"收起","version":"版本","author":"作者："},"en":{"tab":"Mods","reset":"Reset to defaults","confirm":"Reset this mod's settings to their defaults?","unavailable":"Unavailable","empty":"No mod settings available","failed":"Couldn't save your changes.","pending":"Saving…","off":"Off","on":"On","expand":"Expand","collapse":"Collapse","version":"Version","author":"By "},"ko":{"tab":"모드","reset":"기본값으로 초기화","confirm":"이 모드의 설정을 기본값으로 되돌리시겠습니까?","unavailable":"사용할 수 없음","empty":"설정할 수 있는 모드가 없습니다","failed":"저장에 실패했습니다. 변경 사항이 파일에 저장되지 않았습니다.","pending":"저장 중…","off":"끄기","on":"켜기","expand":"펼치기","collapse":"접기","version":"버전","author":"제작자: "},"ru":{"tab":"Моды","reset":"Восстановить значения по умолчанию","confirm":"Восстановить настройки этого мода по умолчанию?","unavailable":"Недоступно","empty":"Нет модов с настройками","failed":"Ошибка сохранения. Изменения не записаны в файл.","pending":"Сохранение…","off":"Выкл.","on":"Вкл.","expand":"Развернуть","collapse":"Свернуть","version":"Версия","author":"Автор: "},"zhHant":{"tab":"模組","reset":"恢復預設值","confirm":"要將此模組的設定恢復為預設值嗎？","unavailable":"暫時無法使用","empty":"目前沒有可設定的模組","failed":"儲存失敗，目前的變更尚未寫入檔案。","pending":"正在儲存…","off":"關閉","on":"開啟","expand":"展開","collapse":"收合","version":"版本","author":"作者："},"es-ES":{"tab":"Mods","reset":"Restablecer valores predeterminados","confirm":"¿Restablecer los ajustes predeterminados de este mod?","unavailable":"No disponible","empty":"No hay mods configurables","failed":"No se han podido guardar los cambios. Aún no se han escrito en el archivo.","pending":"Guardando…","off":"Desactivado","on":"Activado","expand":"Expandir","collapse":"Contraer","version":"Versión","author":"Autor: "},"es-419":{"tab":"Mods","reset":"Restablecer valores predeterminados","confirm":"¿Restablecer los ajustes predeterminados de este mod?","unavailable":"No disponible","empty":"No hay mods configurables","failed":"No se pudieron guardar los cambios. Aún no se han escrito en el archivo.","pending":"Guardando…","off":"Desactivado","on":"Activado","expand":"Expandir","collapse":"Contraer","version":"Versión","author":"Autor: "}},"signatures":{"zhHans":"新游戏","zhHant":"新遊戲","en":"NEW GAME","ko":"새 게임","ru":"НОВАЯ ИГРА","es-ES":"NUEVA PARTIDA","es-419":"NUEVA PARTIDA"},"regionalSignatures":{"key":"UI_Map_20","values":{"es-ES":"Flor del recuerdo","es-419":"Flor de la memoria"}}};
+module.exports={...data,words:createTranslations(data.catalogs)};
