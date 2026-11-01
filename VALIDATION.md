@@ -1,3 +1,9 @@
+## 0.3.5
+
+Correct the signed package channel from preview to stable so the installer offers the official release. Retains 0.3.4's native slider layout: current value when unselected, minimum and maximum endpoints plus a thumb-following value when adjusting. Percentage, integer and color values update immediately. Runtime behavior and existing settings are unchanged.
+
+Automated checks are recorded during preparation. In-game coverage remains limited to the release acceptance evidence.
+
 ## 0.3.4
 
 Restore the native slider value layout: unselected rows show the current value; selected rows show minimum and maximum endpoints with a separate value following the thumb. Percentage, integer and color-channel values update with mouse, keyboard and controller input. Existing settings are preserved.

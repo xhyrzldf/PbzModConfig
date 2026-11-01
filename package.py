@@ -37,7 +37,8 @@ def main():
     manifest = validate_build(args.build)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run([str(args.packer.resolve()), "package", "--spec", str(HERE / "release-spec.json"),
-                    "--build", str(args.build.resolve()), "--version", manifest["version"], "--channel", "preview",
+                    "--build", str(args.build.resolve()), "--version", manifest["version"],
+                    "--channel", "preview" if "-" in manifest["version"] else "stable",
                     "--key", str(args.key.resolve()), "--readme", str(HERE / "PLAYER-README.txt"),
                     "--out", str(args.out.resolve())], check=True)
 
