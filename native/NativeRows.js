@@ -19,6 +19,7 @@ function choiceFontFamily(value, locale) {
     if (/[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/.test(text)) return "KR";
     if (/[\u0400-\u052f]/.test(text)) return "RU";
     if (/[\u3400-\u9fff]/.test(text)) return text === "繁體中文" || locale === "zhHant" ? "TC" : "CN";
+    if (/[\u0102\u0103\u0110\u0111\u01a0\u01a1\u01af\u01b0\u1ea0-\u1ef9]/.test(text) || locale === "vi") return "VN";
     if (/[A-Za-z\u00c0-\u024f]/.test(text)) return "EN";
     return ({ zhHans: "CN", zhHant: "TC", ko: "KR", ru: "RU" })[locale] || "EN";
 }
@@ -31,7 +32,7 @@ function createChoiceTypography(UE) {
         if (!label || typeof label.SetFont !== "function") throw new Error("CHOICE_TEXT_FONT_UNAVAILABLE");
         const suffix = choiceFontFamily(value, locale);
         if (!styles.has(suffix)) {
-            const base = ["KR", "RU", "TC"].includes(suffix)
+            const base = ["KR", "RU", "TC", "VN"].includes(suffix)
                 ? "/Game/PBZContent/UI/Foundation/Text/Textstyle/"
                 : "/Game/PBZContent/UI/UINew/System/Character/";
             const name = "Textstyle_Main_" + suffix;

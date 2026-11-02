@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 import unittest
 import subprocess
@@ -12,6 +13,14 @@ SPEC.loader.exec_module(BUILD)
 
 
 class BuildTests(unittest.TestCase):
+    def test_all_languages_load_without_other_mod_sources(self):
+        script = "const d=require('./src/LocaleStrings');console.log(JSON.stringify({languages:Object.keys(d.catalogs),signature:d.signatures.vi,tab:d.catalogs.vi.tab}));"
+        result = subprocess.run(['node', '-e', script], cwd=HERE, capture_output=True, text=True, encoding='utf-8', check=True)
+        data = json.loads(result.stdout)
+        self.assertEqual(set(data['languages']), {'zhHans','en','zhHant','ko','ru','es-ES','es-419','vi'})
+        self.assertEqual(data['signature'], 'TRÒ CHƠI MỚI')
+        self.assertTrue(data['tab'])
+
     def test_only_single_anchor_changes(self):
         original = ('"use strict";\n' + BUILD.ANCHOR + '\n// end').encode()
         result = BUILD.patch_source(original, BUILD.sha(original))

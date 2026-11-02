@@ -44,7 +44,7 @@ function fixture(locale = "zhHans") {
     const options = [{ value: "ko", label: "한국어" }, { value: "ru", label: "Русский" },
         { value: "zh-Hant", label: "繁體中文" }, { value: "en", label: "English" },
         { value: "es", label: "Español (Latinoamérica)" }, { value: "zh", label: "中文" },
-        { value: "auto", label: "跟随游戏 / Auto" }];
+        { value: "auto", label: "跟随游戏 / Auto" },{value:"vi",label:"Tiếng Việt"}];
     const model = { id: "map/language", type: "choice", label: "显示语言 / Language", value: "ko", options };
     const item = {}, state = { locale, entries: new Map(), models: new Map([[item, model]]), panel: {},
         acceptsInput: () => true, rowReady() {}, word: () => "不可用" };
@@ -59,7 +59,7 @@ function fixture(locale = "zhHans") {
 test("Chinese menu renders each language's own name, including Korean, after native selection styling", () => {
     const f = fixture();
     for (const [value, family] of [["ko", "KR"], ["ru", "RU"], ["zh-Hant", "TC"],
-        ["en", "EN"], ["es", "EN"], ["zh", "CN"], ["auto", "CN"], ["ko", "KR"]]) {
+        ["en", "EN"], ["es", "EN"], ["zh", "CN"], ["auto", "CN"], ["ko", "KR"], ["vi","VN"]]) {
         f.model.value = value; f.binding.refresh(f.model);
         const control = f.row.Rotator_SettingValue, font = control.Text.Font;
         assert.equal(control.selectedText, f.model.options.find(option => option.value === value).label);
@@ -74,8 +74,8 @@ test("Chinese menu renders each language's own name, including Korean, after nat
     assert.equal(f.loaded.filter(path => /Textstyle_Main_KR\./.test(path)).length, 1, "native font lookup is cached");
 });
 
-test("The same choice remains legible in all seven menu languages", () => {
-    for (const locale of ["zhHans", "en", "zhHant", "ko", "ru", "es-ES", "es-419"]) {
+test("The same choice remains legible in all eight menu languages", () => {
+    for (const locale of ["zhHans", "en", "zhHant", "ko", "ru", "es-ES", "es-419", "vi"]) {
         const f = fixture(locale);
         assert.equal(f.row.Rotator_SettingValue.Text.Font.FontObject, "KR-font");
     }

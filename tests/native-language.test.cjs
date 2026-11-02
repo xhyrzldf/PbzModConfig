@@ -11,14 +11,14 @@ test("主播模式中西语地区由第二个原生词条区分",()=>{
         assert.equal(gameLanguage(UE,"ko"),locale);
     }
 });
-test("七语在实际配置页刷新且西语保留地区",t=>{
+test("八语在实际配置页刷新且西语保留地区",t=>{
     const options={engineLanguage:"en",menuText:"NEW GAME"},f=fixture(options);t.after(()=>f.dispose());
     for(const locale of Object.keys(catalogs)){
         options.menuText=signatures[locale];options.engineLanguage=locale;f.state.refresh();
         assert.equal(f.state.locale,locale);assert.equal(f.state.word("tab"),catalogs[locale].tab);
         assert.equal(f.state.word("on"),catalogs[locale].on);assert.equal(f.state.word("confirm"),catalogs[locale].confirm);
     }
-    options.engineLanguage="es-MX";f.state.refresh();assert.equal(f.state.locale,"es-419");
+    options.menuText=signatures["es-419"];options.engineLanguage="es-MX";f.state.refresh();assert.equal(f.state.locale,"es-419");
     options.engineLanguage="";f.state.refresh();assert.equal(f.state.locale,"es-419");
 });
 test("主播模式式语言分离仍按原生中文刷新整个配置页",t=>{
