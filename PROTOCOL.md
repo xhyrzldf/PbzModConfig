@@ -56,6 +56,19 @@
 
 接入方可提供同步工厂`createVisualPreview(context) -> {update, dispose}`。`context`含原生菜单`owner`、独立预览`host`、逻辑`width/height`、`setCaption(text)`及`report(error)`。控制器的`update({key, values, locale, revision})`接收当前选中键和复制快照；合法、未过期的颜色草稿只覆盖这个快照，不调用`apply`。提供者应只在所给容器中创建界面，不写真实HUD、战斗属性、时间或配置，不触发战斗事件。
 
+这是所有接入模组共用的能力，不依赖某个战斗模组、配置键或条形样式。框架负责预览区域、配置快照、颜色草稿和生命周期；接入模组负责自己的预览内容。准星、地图标记、文字位置和动效等都可通过同一接口实现，但没有实现预览的旧模组不会自动生成效果稿。
+
+例如，准星模组已有自己的配置仓库`store`，只需在发布描述时附加自己的绘制工厂：
+
+```js
+const registration = publishOptional({
+    ...store,
+    createVisualPreview: context => createReticlePreview(context)
+});
+```
+
+其中`createReticlePreview`由准星模组实现：在`context.host`中创建自有控件，返回`update({key, values, locale, revision})`和`dispose()`。`update`用当前快照更新大小、颜色等外观；`dispose`移除控件和自有计时器。它不需要引用其他业务模组，也不需要修改ModConfig源码。完整声音与颜色控件接入方式见[扩展示例](demo/ExtendedProvider.js)。
+
 `dispose()`必须幂等并清理计时器、声音、回调和自有控件。切换提供者、关闭、覆盖菜单、注销或预览故障会释放控制器；过期句柄不能释放后来创建的预览。工厂与控制器均不接受Promise。旧接入方不需要实现此接口，旧框架忽略它；新扩展仍经`publishOptional`发布，配置保留规则不变。
 
 调色盘是菜单的通用颜色编辑功能，不依赖上述工厂。鼠标点选色相和饱和度，数值行保留RGB／透明度微调，支持键盘与手柄。修改前后色块同时显示，确认保存、取消恢复；只有接入了工厂的模组才会在实际外观预览中显示颜色草稿。
