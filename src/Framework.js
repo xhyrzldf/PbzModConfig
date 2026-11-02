@@ -8,7 +8,7 @@ function createFramework(hub, options = {}) {
     function stopPreview() {
         const generation = ++previewGeneration;
         const old = playback; playback = null;
-        if (old) try { old.stop(); } catch (e) { report({ code: "PREVIEW_STOP_FAILED", detail: String(e) }); }
+        if (old) try { old.stop(); report({code:"SOUND_PREVIEW_STOPPED",modId:old.record.modId,key:old.key}); } catch (e) { report({ code: "PREVIEW_STOP_FAILED", detail: String(e) }); }
         return generation;
     }
     function stopVisual() {
@@ -187,7 +187,7 @@ function createFramework(hub, options = {}) {
                 report({code:"VISUAL_PREVIEW_FAILED",detail:String(e)});return {ok:false,error:"PREVIEW_FAILED"};
             }
         },
-        preview(handle, key, revision) {
+        preview(handle, key, revision, beginAudioFocus) {
             const generation = stopPreview();
             if (generation !== previewGeneration || disposed) return { ok: false, error: "PREVIEW_CHANGED" };
             const record = lookup(handle), current = record && read(record), entry = record?.schema?.entries.get(key);
@@ -195,17 +195,33 @@ function createFramework(hub, options = {}) {
             if (revision !== undefined && revision !== current.revision) return { ok: false, error: "REVISION_CONFLICT" };
             if (entry?.type !== "sound" || typeof record.descriptor.previewSound !== "function") return { ok: false, error: "PREVIEW_UNAVAILABLE" };
             if (!S.enabled(entry, current.values) || !S.visible(entry, current.values)) return { ok: false, error: "DISABLED" };
+            let restore=null,result=null,owned=false;
+            const release=()=>{const fn=restore;restore=null;if(typeof fn==="function")try{fn();}catch(e){report({code:"PREVIEW_AUDIO_RESTORE_FAILED",detail:String(e)});}};
+            const stop=()=>{try{if(owned){owned=false;result.stop();}}finally{release();}};
             try {
-                const result = record.descriptor.previewSound(key, { baseRevision: current.revision });
-                if (!result?.ok || typeof result.stop !== "function") return { ok: false, error: result?.error || "PREVIEW_FAILED" };
+                if(typeof beginAudioFocus==="function")restore=beginAudioFocus();
+                if(generation!==previewGeneration){release();return {ok:false,error:"PREVIEW_CHANGED"};}
+                report({code:"SOUND_PREVIEW_REQUESTED",modId:record.modId,key,value:current.values[key]});
+                result = record.descriptor.previewSound(key, { baseRevision: current.revision });
+                if (!result?.ok || typeof result.stop !== "function") {
+                    release();
+                    report({code:"SOUND_PREVIEW_REJECTED",modId:record.modId,key,detail:result?.error||"PREVIEW_FAILED"});
+                    return { ok: false, error: result?.error || "PREVIEW_FAILED" };
+                }
+                owned=true;
                 // Close/cover may run inside the owner's start callback, before
                 // its stop function exists. Do not resurrect that canceled start.
-                if (generation !== previewGeneration) { result.stop(); return { ok: false, error: "PREVIEW_CHANGED" }; }
-                playback = { record, key, value: current.values[key], stop: result.stop };
+                if (generation !== previewGeneration) { stop(); return { ok: false, error: "PREVIEW_CHANGED" }; }
+                playback = { record, key, value: current.values[key], stop };
                 const latest = lookup(handle) === record && read(record);
                 if (!latest || !record.active || !playback) { stopPreview(); return { ok: false, error: "PREVIEW_CHANGED" }; }
+                report({code:"SOUND_PREVIEW_STARTED",modId:record.modId,key,durationMs:result.durationMs});
                 return { ok: true, durationMs:Number.isFinite(result.durationMs)?Math.max(50,Math.min(5000,result.durationMs)):5000 };
-            } catch (e) { stopPreview(); report({ code: "PREVIEW_FAILED", detail: String(e) }); return { ok: false, error: "PREVIEW_FAILED" }; }
+            } catch (e) {
+                try{if(playback?.stop===stop)stopPreview();else stop();}
+                catch(cleanup){report({code:"PREVIEW_STOP_FAILED",detail:String(cleanup)});}
+                report({ code: "PREVIEW_FAILED", detail: String(e) }); return { ok: false, error: "PREVIEW_FAILED" };
+            }
         },
         stopPreview,
         flushAll() { return Array.from(records.values()).map(r => ({ modId: r.modId, result: operate(r, "flush") })); },

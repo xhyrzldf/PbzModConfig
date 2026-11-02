@@ -332,7 +332,8 @@ function createMenu(UE, puerts, framework, report, options={}) {
                 states.delete(panel);
             }
         };
-        state.editors = createEditors(framework,{word:state.word,refresh:()=>state.queueRefresh(),compactSound:true});
+        state.editors = createEditors(framework,{word:state.word,refresh:()=>state.queueRefresh(),compactSound:true,
+            beginAudioFocus:()=>require("./NativePreviewAudio").begin(UE,state.panel,report)});
         states.set(panel, state);
         try {
             state.tabs = panel.W_OverlayTabList_C;

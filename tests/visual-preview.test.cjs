@@ -27,7 +27,15 @@ test("真实声音行选择和试听合一，鼠标与确认键试听，切换�
     try{
         f.state.action(f.id);f.state.refresh();const id="PbzMapTracker/sound";
         assert.equal([...f.state.byId.keys()].filter(k=>k.startsWith(id)).length,1);
-        f.bind(id);const b=f.state.entries.get(id);assert.ok(b.previewControl);assert.equal(b.previewControl.selectedText,"Preview");
+        f.bind(id);const b=f.state.entries.get(id);assert.ok(b.previewControl);assert.ok(b.previewIcon.texture);assert.equal(b.previewIcon.visibility,4,"speaker art must not intercept the native button");
+        // Model the actual native hierarchy: arrow art and button share an
+        // Overlay; moving parent AND child displaced only the clickable area.
+        const worldX=w=>(w.translation?.X||0)+(w.parent?worldX(w.parent):0);
+        for(const [button,art] of [[b.row.Button_Decrease,b.row.DecreaseOverlay],[b.row.Button_Increase,b.row.IncreaseOverlay]]){
+            assert.equal(worldX(button),worldX(art),"clickable area must stay over the visible arrow");
+        }
+        b.row.Button_Increase.OnButtonBaseClicked.emit();assert.equal(store.read().values.sound,"tick");
+        b.row.Button_Decrease.OnButtonBaseClicked.emit();assert.equal(store.read().values.sound,"bell");
         b.previewControl.OnButtonBaseClicked.emit();assert.equal(starts,1);
         f.state.step(id,1);assert.equal(stops,1);assert.equal(store.read().values.sound,"tick");
         f.state.key(id,"Enter",false);assert.equal(starts,2);f.state.hide();assert.equal(stops,2);

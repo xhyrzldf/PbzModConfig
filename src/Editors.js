@@ -42,7 +42,7 @@ function createEditors(framework, options) {
             }
             return result;
         }
-        if (model.type === "sound" && options.compactSound) return [{...model,type:"choice",inlineSoundPreview:true,previewLabel:word(playing?.id===model.id?"stop":"preview")}];
+        if (model.type === "sound" && options.compactSound) return [{...model,type:"choice",inlineSoundPreview:true,previewPlaying:playing?.id===model.id,previewLabel:word(playing?.id===model.id?"stop":"preview")}];
         if (model.type === "sound") return [
             {...model,type:"choice"},
             child(model,"preview",{type:"action",editorAction:"preview",label:word("preview"),buttonLabel:word(playing?.id === model.id ? "stop" : "preview")})
@@ -95,7 +95,7 @@ function createEditors(framework, options) {
                     const generation=stop();
                     if(generation!==previewGeneration)return true;
                     feedback=null;
-                    const result=framework.preview(model.page.handle,model.key,model.page.revision);
+                    const result=framework.preview(model.page.handle,model.key,model.page.revision,options.beginAudioFocus);
                     if(generation!==previewGeneration)return true;
                     if(result.ok){playing={...reference(model),id:model.parentId};timer=schedule(()=>{stop();refresh();},result.durationMs||5000);}
                     else error(model.parentId,result);

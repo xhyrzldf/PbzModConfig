@@ -44,7 +44,7 @@ function fixture(options = {}) {
     const UE = {
         Class: { Load: name => name }, Object: {Load:()=>({})}, BuiltinText: {},
         Key: class {constructor(name){this.KeyName=name;}},
-        Vector2D: class {constructor(x,y){this.X=x;this.Y=y;}}, Anchors:class{},LinearColor:class{},
+        Vector2D: class {constructor(x,y){this.X=x;this.Y=y;}}, Anchors:class{},LinearColor:class{constructor(R,G,B,A){Object.assign(this,{R,G,B,A});}},
         SubsystemBlueprintLibrary:{GetLocalPlayerSubsystem:()=>({IsUIKeyHeld:key=>(options.heldKeys||[]).includes(key.KeyName)})},
         PBZUIActionRouterBase:{StaticClass:()=>({})},
         SGameAIFunctionLibrary:{GetClassDefaultObject:()=>({Font:{FontObject:{},TypefaceFontName:"Regular",LetterSpacing:0}})},
@@ -69,8 +69,8 @@ function fixture(options = {}) {
         BP_SetListItems() {}, RequestRefresh() {}, BP_SetSelectedItem() {}, BP_ScrollItemIntoView() {}
     });
     const ui = {
-        V: { Visible: 0, SelfHitTestInvisible: 1, Collapsed: 2, Hidden:3 }, valid: value => !!value,
-        asText: value => value, text(label,value) {if(label)label.text=value;}, replaceControl() {},
+        V: { Visible: 0, SelfHitTestInvisible: 1, Collapsed: 2, Hidden:3, HitTestInvisible:4 }, valid: value => !!value,
+        asText: value => value, text(label,value) {if(label)label.text=value;}, replaceControl(row,old,fresh) {fresh.parent=old.parent;},
         lifetime() {
             const cleanup = [];
             return { live: true, bind(event, fn) {
@@ -83,12 +83,13 @@ function fixture(options = {}) {
         native(owner,kind) {
             if(kind==="CommonListView")return list;
             if(kind==="CanvasPanel")return Object.assign(widget(),{AddChildToCanvas(){return{SetAnchors(){},SetAlignment(){},SetPosition(){},SetSize(){}};}});
-            return Object.assign(widget(),{SetBrushFromTexture(){},SetColorAndOpacity(){},SetMinValue(){},SetMaxValue(){},SetStepSize(){},SetValue(value){this.value=value;},SetDisplayValue(value){this.displayValue=value;}});
+            return Object.assign(widget(),{SetBrushFromTexture(texture){this.texture=texture;},SetColorAndOpacity(color){this.color=color;},SetMinValue(){},SetMaxValue(){},SetStepSize(){},SetValue(value){this.value=value;},SetDisplayValue(value){this.displayValue=value;}});
         },
         widget(owner, type) {
             if (type === "FixtureRotator") return rotator();
-            return Object.assign(widget(), { Button_Action: widget(), Button_Decrease:widget(), Button_Increase:widget(),
-            DecreaseOverlay:widget(), IncreaseOverlay:widget(),
+            const decrease=widget(),increase=widget();
+            return Object.assign(widget(), { Button_Action: widget(), Button_Decrease:Object.assign(widget(),{parent:decrease}), Button_Increase:Object.assign(widget(),{parent:increase}),
+            DecreaseOverlay:decrease, IncreaseOverlay:increase,
             Slider_SettingValue:widget(),InitCachedTexts(){},CurrentValue:widget(),Text_RightValue:widget(),Text_LeftValue:widget(),Text_SettingValue:widget(),
             SetSelected(selected){this.CurrentValue.SetVisibility(selected?3:1);for(const w of [this.Text_LeftValue,this.Text_RightValue,this.Text_SettingValue])w.SetVisibility(selected?1:3);},
             UpdateCursorTextPosition(){this.cursorUpdates=(this.cursorUpdates||0)+1;this.cursorNormalizedValue=this.Slider_SettingValue.value;},

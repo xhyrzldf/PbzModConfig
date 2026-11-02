@@ -1,6 +1,7 @@
 "use strict";
 const { colorChannels } = require("../provider/Controls");
 const EDITORS = "/Game/PBZContent/UI/Settings/Editors/";
+const SPEAKER = "/Game/PBZContent/UI/Settings/Texture/T_SecondTab_Settings_ShengYin.T_SecondTab_Settings_ShengYin";
 function heldModifiers(UE, owner) {
     // Build 26266538 AbilityWidget.isHeldNodeNavigationKeyDown uses this router.
     // PlayerController.IsInputKeyDown is false under the native menu input mode.
@@ -133,8 +134,9 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
                     styleChoice(fresh, current.options[index]?.label, state.locale);
                 };
                 if(model.inlineSoundPreview){
-                    const preview=ui.widget(state.panel,old.GetClass());
-                    preview.OptionsScalingSizeBox.RemoveFromParent();
+                    // The native settings button has an empty Overlay. Keep its
+                    // hit target, and draw the game's own Audio-tab brush above it.
+                    const preview=ui.widget(state.panel,row.Button_Increase.GetClass());
                     preview.SetIsInteractionEnabled(true);preview.SetIsFocusable(false);
                     preview.SetVisibility(ui.V.Visible);b.controls.push(preview);
                     // Row hosts can have OverlaySlot/BoxSlot roots. Only our own
@@ -145,18 +147,32 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
                     if(layerSlot.SetHorizontalAlignment)layerSlot.SetHorizontalAlignment(UE.EHorizontalAlignment.HAlign_Fill);
                     if(layerSlot.SetVerticalAlignment)layerSlot.SetVerticalAlignment(UE.EVerticalAlignment.VAlign_Fill);
                     scope.own(()=>previewLayer.RemoveFromParent());
-                    const ps=previewLayer.AddChildToCanvas(preview),anchors=new UE.Anchors();
+                    const anchors=new UE.Anchors();
                     anchors.Minimum=new UE.Vector2D(1,.5);anchors.Maximum=anchors.Minimum;
-                    ps.SetAnchors(anchors);ps.SetAlignment(new UE.Vector2D(1,.5));
-                    ps.SetPosition(new UE.Vector2D(-20,0));ps.SetSize(new UE.Vector2D(100,48));
-                    for(const w of [fresh,row.Button_Decrease,row.Button_Increase,row.DecreaseOverlay,row.IncreaseOverlay])w.SetRenderTranslation(new UE.Vector2D(-120,0));
+                    const place=(widget,width,height,right)=>{
+                        const slot=previewLayer.AddChildToCanvas(widget);
+                        slot.SetAnchors(anchors);slot.SetAlignment(new UE.Vector2D(1,.5));
+                        slot.SetPosition(new UE.Vector2D(-right,0));slot.SetSize(new UE.Vector2D(width,height));
+                    };
+                    place(preview,76,60,22);
+                    const icon=ui.native(state.panel,"Image"),texture=UE.Object.Load(SPEAKER);
+                    if(!ui.valid(texture))throw Error("PREVIEW_SPEAKER_ASSET_MISSING");
+                    icon.SetBrushFromTexture(texture);icon.SetVisibility(ui.V.HitTestInvisible);place(icon,42,42,39);
+                    scope.own(()=>icon.RemoveFromParent());
+                    // Build 26266538: Button_Decrease/Increase are CHILDREN of
+                    // their Overlays. Translating both moves the hitbox twice.
+                    for(const w of [fresh,row.DecreaseOverlay,row.IncreaseOverlay])w.SetRenderTranslation(new UE.Vector2D(-120,0));
                     scope.own(()=>preview.RemoveFromParent());
                     scope.bind(preview.OnButtonBaseClicked,()=>{if(editable())state.previewSound(b.id);});
-                    const update=b.update;b.update=current=>{
-                        update(current);const labels=UE.NewArray(UE.BuiltinText);labels.Add(ui.asText(current.previewLabel));
-                        preview.PopulateTextLabels(labels);preview.SetSelectedItem(0);styleChoice(preview,current.previewLabel,state.locale);
+                    b.refreshValue=(selected=state.selected===b.id)=>{
+                        const m=state.models.get(item),ink=selected?.08:1;
+                        icon.SetColorAndOpacity(new UE.LinearColor(ink,ink,ink,m?.previewPlaying?1:.68));
+                        icon.SetRenderOpacity(m?.enabled===false?.4:1);
                     };
-                    b.previewControl=preview;
+                    const update=b.update;b.update=current=>{
+                        update(current);b.refreshValue();
+                    };
+                    b.previewControl=preview;b.previewIcon=icon;
                 }
             } else if (model.type === "number") {
                 const old = row.Slider_SettingValue, fresh = ui.native(row, old.GetClass());
@@ -328,4 +344,4 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
         for (const [host, binding] of Array.from(bindings)) if (binding.state === state) release(host);
     } };
 }
-module.exports = { createRows, choiceFontFamily, createChoiceTypography, heldModifiers };
+module.exports = { createRows, choiceFontFamily, createChoiceTypography, heldModifiers, SPEAKER };
