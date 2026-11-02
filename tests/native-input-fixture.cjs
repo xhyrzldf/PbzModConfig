@@ -20,7 +20,7 @@ function widget(type = "FixtureWidget") {
         GetClass: () => type, attached: true, RemoveFromParent() { this.attached = false; }, SetSelected() {}, SetFocus() {},
         OnButtonBaseClicked: delegate(), OnRotated: delegate(),
         SetIsInteractionEnabled(value) { this.interactive = value; }, SetIsFocusable() {},
-        SetIsEnabled(value) { this.enabled = value; },SetRenderOpacity(value){this.opacity=value;},
+        SetIsEnabled(value) { this.enabled = value; },SetRenderOpacity(value){this.opacity=value;},SetRenderTranslation(value){this.translation=value;},
         OnValueChanged:delegate(),OnMouseCaptureEnd:delegate(),OnControllerCaptureEnd:delegate(),
         // The native Action button has an empty Overlay, not a text widget.
         SetButtonText() {} };
@@ -116,6 +116,7 @@ function fixture(options = {}) {
     const sandbox = { module: { exports: {} }, require(name) {
         if (name === "./NativeSupport") return { createSupport: () => ui };
         if (name === "./NativeFooter") return { createFooter: () => ({ update() {} }) };
+        if (name === "./NativePreview") return { createPreviewPane: () => ({update(){},hide(){},dispose(){}}) }; // Exercised with native-shaped widgets in native-preview.test.cjs.
         if (name === "./NativeIcon") return { createIconLoader: () => () => ({}) };
         return realRequire(name); // NativeRows and framework logic are the actual implementations.
     }, setTimeout: () => 1, clearTimeout() {}, setInterval: () => 1, clearInterval() {} };

@@ -1,3 +1,7 @@
+## 0.3.6
+
+111项脚本和13项Python检查通过；预览使用原生形状夹具验证，真实游戏布局、鼠标命中和暂停时可听性尚待验证。
+
 ## 0.3.5
 
 Correct the signed package channel from preview to stable so the installer offers the official release. Retains 0.3.4's native slider layout: current value when unselected, minimum and maximum endpoints plus a thumb-following value when adjusting. Percentage, integer and color values update immediately. Runtime behavior and existing settings are unchanged.

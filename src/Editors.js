@@ -1,5 +1,6 @@
 "use strict";
 const C = require("../provider/Controls");
+const Palette = require("./ColorPalette");
 // Editing state is transient. Only an explicit accepted value reaches the owner.
 function createEditors(framework, options) {
     const refresh = options.refresh, word = options.word;
@@ -41,6 +42,7 @@ function createEditors(framework, options) {
             }
             return result;
         }
+        if (model.type === "sound" && options.compactSound) return [{...model,type:"choice",inlineSoundPreview:true,previewLabel:word(playing?.id===model.id?"stop":"preview")}];
         if (model.type === "sound") return [
             {...model,type:"choice"},
             child(model,"preview",{type:"action",editorAction:"preview",label:word("preview"),buttonLabel:word(playing?.id === model.id ? "stop" : "preview")})
@@ -61,6 +63,12 @@ function createEditors(framework, options) {
         get activeId() { return session?.id; },
         get feedback() { return feedback; },
         get colorDraft() { return session?.kind === "color" ? C.colorValue(session.channels) : null; },
+        get colorEdit() { return session?.kind === "color" ? {id:session.id,key:session.key,handle:session.handle,value:C.colorValue(session.channels),revision:session.revision} : null; },
+        pickColor(value) {
+            if(session?.kind!=="color"||C.colorError(session.control,value))return false;
+            session.channels=C.colorChannels(value);feedback=null;refresh();return true;
+        },
+        setBrightness(value) { return session?.kind==="color" ? this.pickColor(Palette.brightness(C.colorValue(session.channels),value)) : false; },
         reconcile(models) {
             if (session && !current(models.get(session.id),session)) { const id=session.id;session=null;feedback={id,code:"REVISION_CONFLICT"}; }
             if (playing && !current(models.get(playing.id),playing)) stop();
@@ -89,7 +97,7 @@ function createEditors(framework, options) {
                     feedback=null;
                     const result=framework.preview(model.page.handle,model.key,model.page.revision);
                     if(generation!==previewGeneration)return true;
-                    if(result.ok){playing={...reference(model),id:model.parentId};timer=schedule(()=>{stop();refresh();},5000);}
+                    if(result.ok){playing={...reference(model),id:model.parentId};timer=schedule(()=>{stop();refresh();},result.durationMs||5000);}
                     else error(model.parentId,result);
                 }
                 refresh();return true;

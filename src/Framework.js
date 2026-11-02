@@ -3,7 +3,7 @@ const S = require("../provider/Schema");
 const L = require("./Localization");
 function createFramework(hub, options = {}) {
     const records = new Map(), listeners = new Set();
-    let disposed = false, locale = "zhHans", playback = null, previewGeneration = 0;
+    let disposed = false, locale = "zhHans", playback = null, previewGeneration = 0, visual = null, visualGeneration = 0;
     const report = event => { try { (options.report || (e => console.warn("[PbzModConfig] " + JSON.stringify(e))))(event); } catch (_) {} };
     function stopPreview() {
         const generation = ++previewGeneration;
@@ -11,11 +11,17 @@ function createFramework(hub, options = {}) {
         if (old) try { old.stop(); } catch (e) { report({ code: "PREVIEW_STOP_FAILED", detail: String(e) }); }
         return generation;
     }
+    function stopVisual() {
+        const generation=++visualGeneration,old=visual;visual=null;
+        if(old)try{old.controller.dispose();}catch(e){report({code:"VISUAL_PREVIEW_STOP_FAILED",detail:String(e)});}
+        return generation;
+    }
     function emit(event) {
         for (const listener of Array.from(listeners)) try { listener(event); } catch (e) { report({ code: "VIEW_FAILED", detail: String(e) }); }
     }
     function fault(record, operation, error) {
         if (playback?.record === record) stopPreview();
+        if (visual?.record === record) stopVisual();
         const next = { code: "PROVIDER_FAILED", operation, detail: String(error) };
         if (JSON.stringify(record.error) === JSON.stringify(next)) return;
         record.error = next;
@@ -42,6 +48,7 @@ function createFramework(hub, options = {}) {
     }
     function release(record) {
         if (playback?.record === record) stopPreview();
+        if (visual?.record === record) stopVisual();
         record.active = false;
         try { record.unsubscribe?.(); } catch (e) { report({ code: "UNSUBSCRIBE_FAILED", modId: record.modId, detail: String(e) }); }
     }
@@ -148,6 +155,31 @@ function createFramework(hub, options = {}) {
         edit(handle, key, value, revision) { return operate(handle, "apply", { [key]: value }, revision); },
         reset(handle, groupId, revision) { return operate(handle, "reset", groupId, revision); },
         action(handle, key, revision) { return operate(handle, "invokeAction", key, revision); },
+        hasVisual(handle) { const r=lookup(handle);return !!r&&!r.error&&typeof r.descriptor.createVisualPreview==="function"; },
+        openVisual(handle, context) {
+            const generation=stopVisual(),record=lookup(handle);
+            if(generation!==visualGeneration)return {ok:false,error:"PREVIEW_CHANGED"};
+            if(disposed||!record||typeof record.descriptor.createVisualPreview!=="function")return {ok:false,error:"PREVIEW_UNAVAILABLE"};
+            let controller;
+            try{
+                controller=record.descriptor.createVisualPreview(context);
+                if(!controller||typeof controller.update!=="function"||typeof controller.dispose!=="function"||typeof controller.then==="function")throw Error("INVALID_VISUAL_PREVIEW");
+                if(generation!==visualGeneration||lookup(handle)!==record){controller.dispose();return {ok:false,error:"PREVIEW_CHANGED"};}
+                const own={record,controller};visual=own;
+                return {ok:true,update(key,draft){
+                    if(visual!==own||lookup(handle)!==record)return false;
+                    const current=read(record);if(!current){stopVisual();return false;}
+                    const values=S.copy(current.values),entry=record.schema.entries.get(key);
+                    // Only a validated color draft may override saved values. Never call apply here.
+                    if(draft&&draft.key===key&&draft.revision===current.revision&&entry?.type==="color"&&S.enabled(entry,values)&&S.visible(entry,values)&&!Object.keys(S.validatePatch(record.schema,{[key]:draft.value},values)).length)values[key]=draft.value;
+                    try{controller.update({key,values,locale,revision:current.revision});return true;}
+                    catch(e){stopVisual();report({code:"VISUAL_PREVIEW_FAILED",detail:String(e)});return false;}
+                },dispose(){if(visual===own)stopVisual();}};
+            }catch(e){
+                if(controller?.dispose)try{controller.dispose();}catch(cleanup){report({code:"VISUAL_PREVIEW_STOP_FAILED",detail:String(cleanup)});}
+                report({code:"VISUAL_PREVIEW_FAILED",detail:String(e)});return {ok:false,error:"PREVIEW_FAILED"};
+            }
+        },
         preview(handle, key, revision) {
             const generation = stopPreview();
             if (generation !== previewGeneration || disposed) return { ok: false, error: "PREVIEW_CHANGED" };
@@ -165,7 +197,7 @@ function createFramework(hub, options = {}) {
                 playback = { record, key, value: current.values[key], stop: result.stop };
                 const latest = lookup(handle) === record && read(record);
                 if (!latest || !record.active || !playback) { stopPreview(); return { ok: false, error: "PREVIEW_CHANGED" }; }
-                return { ok: true };
+                return { ok: true, durationMs:Number.isFinite(result.durationMs)?Math.max(50,Math.min(5000,result.durationMs)):5000 };
             } catch (e) { stopPreview(); report({ code: "PREVIEW_FAILED", detail: String(e) }); return { ok: false, error: "PREVIEW_FAILED" }; }
         },
         stopPreview,
@@ -173,6 +205,7 @@ function createFramework(hub, options = {}) {
         dispose() {
             if (disposed) return;
             stopPreview();
+            stopVisual();
             const results = this.flushAll();
             disposed = true;
             unsubscribeHub();

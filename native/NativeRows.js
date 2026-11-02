@@ -132,6 +132,24 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
                     fresh.SetSelectedItem(index);
                     styleChoice(fresh, current.options[index]?.label, state.locale);
                 };
+                if(model.inlineSoundPreview){
+                    const preview=ui.widget(state.panel,old.GetClass());
+                    preview.OptionsScalingSizeBox.RemoveFromParent();
+                    preview.SetIsInteractionEnabled(true);preview.SetIsFocusable(false);
+                    preview.SetVisibility(ui.V.Visible);b.controls.push(preview);
+                    const ps=root.AddChild(preview),anchors=new UE.Anchors();
+                    anchors.Minimum=new UE.Vector2D(1,.5);anchors.Maximum=anchors.Minimum;
+                    ps.SetAnchors(anchors);ps.SetAlignment(new UE.Vector2D(1,.5));
+                    ps.SetPosition(new UE.Vector2D(-20,0));ps.SetSize(new UE.Vector2D(100,48));
+                    for(const w of [fresh,row.Button_Decrease,row.Button_Increase,row.DecreaseOverlay,row.IncreaseOverlay])w.SetRenderTranslation(new UE.Vector2D(-120,0));
+                    scope.own(()=>preview.RemoveFromParent());
+                    scope.bind(preview.OnButtonBaseClicked,()=>{if(editable())state.previewSound(b.id);});
+                    const update=b.update;b.update=current=>{
+                        update(current);const labels=UE.NewArray(UE.BuiltinText);labels.Add(ui.asText(current.previewLabel));
+                        preview.PopulateTextLabels(labels);preview.SetSelectedItem(0);styleChoice(preview,current.previewLabel,state.locale);
+                    };
+                    b.previewControl=preview;
+                }
             } else if (model.type === "number") {
                 const old = row.Slider_SettingValue, fresh = ui.native(row, old.GetClass());
                 // Copy the game's actual Slate/material styles, never substitute a generic slider.

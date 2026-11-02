@@ -88,7 +88,7 @@ test("真实颜色行能挂接预览，真实鼠标事件可绑定且不触发�
 test("真实菜单在试听启动期间关闭或被弹窗覆盖，声音立即清理",()=>{
     for(const close of [f=>f.state.hide(),f=>f.state.cover()]){
         let f,starts=0,stops=0;f=nativeFixture(()=>{starts++;close(f);return()=>stops++;});
-        try{f.state.action("PbzMapTracker/sound/@preview");assert.equal(starts,1);assert.equal(stops,1);assert.equal(f.state.acceptsInput(),false);}finally{f.dispose();}
+        try{f.state.previewSound("PbzMapTracker/sound");assert.equal(starts,1);assert.equal(stops,1);assert.equal(f.state.acceptsInput(),false);}finally{f.dispose();}
     }
 });
 test("键盘和手柄普通导航均可清除绑定，不需要先进入捕获",()=>{
@@ -115,7 +115,7 @@ test("切换音效时旧音效停止回调关闭或覆盖菜单，不得启动�
         let f;const starts=[],stops=[];
         f=nativeFixture(key=>{starts.push(key);return()=>{stops.push(key);if(key==="sound")close(f);};},spec=>spec.entries.push({...spec.entries.find(e=>e.key==="sound"),key:"sound2"}));
         try{
-            f.state.action("PbzMapTracker/sound/@preview");f.state.action("PbzMapTracker/sound2/@preview");
+            f.state.previewSound("PbzMapTracker/sound");f.state.previewSound("PbzMapTracker/sound2");
             assert.equal(f.state.acceptsInput(),false);assert.deepEqual(starts,["sound"]);assert.deepEqual(stops,["sound"]);
         }finally{f.dispose();}
     }
@@ -123,14 +123,14 @@ test("切换音效时旧音效停止回调关闭或覆盖菜单，不得启动�
 test("开始改键或颜色编辑时停止试听，关闭回调不得复活编辑会话",()=>{
     for(const field of ["shortcut","tint"]){
         let f;f=nativeFixture(()=>()=>f.state.hide());
-        try{f.state.action("PbzMapTracker/sound/@preview");f.state.action("PbzMapTracker/"+field);assert.equal(f.state.acceptsInput(),false);assert.equal(f.state.editors.activeId,undefined);}finally{f.dispose();}
+        try{f.state.previewSound("PbzMapTracker/sound");f.state.action("PbzMapTracker/"+field);assert.equal(f.state.acceptsInput(),false);assert.equal(f.state.editors.activeId,undefined);}finally{f.dispose();}
     }
 });
 for(const method of ["hide","cover","dispose"])test(`${method} 先关闭输入再停止声音，停止回调不能再次启动其他试听`,()=>{
     let f;const starts=[],stops=[];
-    f=nativeFixture(key=>{starts.push(key);return()=>{stops.push(key);if(key==="sound")f.state.action("PbzMapTracker/sound2/@preview");};},spec=>spec.entries.push({...spec.entries.find(e=>e.key==="sound"),key:"sound2"}));
+    f=nativeFixture(key=>{starts.push(key);return()=>{stops.push(key);if(key==="sound")f.state.previewSound("PbzMapTracker/sound2");};},spec=>spec.entries.push({...spec.entries.find(e=>e.key==="sound"),key:"sound2"}));
     try{
-        f.state.action("PbzMapTracker/sound/@preview");f.state[method]();
+        f.state.previewSound("PbzMapTracker/sound");f.state[method]();
         assert.equal(f.state.acceptsInput(),false);assert.deepEqual(starts,["sound"]);assert.deepEqual(stops,["sound"]);
     }finally{f.state.editors.close();f.dispose();}
 });

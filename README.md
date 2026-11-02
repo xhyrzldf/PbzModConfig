@@ -2,11 +2,13 @@
 
 在游戏原生设置中增加「模组」页签，为接入的模组提供统一的配置界面。
 
-**版本：0.3.5** · **目标游戏构建：Steam 26266538 / UE 5.7.4**
+**版本：0.3.6** · **目标游戏构建：Steam 26266538 / UE 5.7.4**
 
 作者：[皮一下就很凡@Bilibili](https://space.bilibili.com/26786884)
 
 ## 功能
+
+音色选择与试听合为一行；颜色编辑增加调色盘与前后对比；支持接入模组的右侧即时预览。保留协议1、旧模组与保存值。新增界面及暂停菜单试听尚待游戏内验证。
 
 - 原生设置页签、列表与说明区，支持折叠分组、开关、数值滑条、枚举、动作和恢复默认。
 - 支持直接录入快捷键、颜色编辑及音效选择／试听；现有提供者与保存格式继续兼容。详见[扩展示例](demo/ExtendedProvider.js)。
@@ -41,7 +43,7 @@
 在仓库根目录执行（替换示例路径）：
 
 ```powershell
-python build.py --source-root "<脚本导出根目录>" --game-root "<游戏安装目录>" --repak "<repak.exe路径>" --retoc "<retoc.exe路径>" --out .local/build-0.3.5
+python build.py --source-root "<脚本导出根目录>" --game-root "<游戏安装目录>" --repak "<repak.exe路径>" --retoc "<retoc.exe路径>" --out .local/build-0.3.6
 ```
 
 输出是 `zzz_PBZModConfig_P.pak/.utoc/.ucas` 三件套及哈希清单。输出必须位于本仓库 `.local/` 下的新子目录；脚本不会安装模组，也不会覆盖旧构建。

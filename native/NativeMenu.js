@@ -4,6 +4,7 @@ const { createRows } = require("./NativeRows");
 const { createFooter } = require("./NativeFooter");
 const { createIconLoader } = require("./NativeIcon");
 const { createEditors } = require("../src/Editors");
+const { createPreviewPane } = require("./NativePreview");
 const { resolve, gameLanguage } = require("../src/Localization");
 const { words: WORDS } = require("../src/LocaleStrings");
 const TAB = "PbzModConfig";
@@ -141,6 +142,7 @@ function createMenu(UE, puerts, framework, report) {
                     ui.text(view[field], value); view[field].SetVisibility(value ? ui.V.SelfHitTestInvisible : ui.V.Collapsed);
                 }
                 state.footer?.update(m?.section === true);
+                state.previewPane?.update(m);
             },
             select(id, focus) {
                 const token = state.byId.get(id), m = state.models.get(token);
@@ -178,6 +180,12 @@ function createMenu(UE, puerts, framework, report) {
                 if (!result.ok) report({ code: "EDIT_REJECTED", id, error: result.error });
                 // Re-read the owner immediately; a second input cannot reuse the previous revision.
                 state.refresh();
+            },
+            previewSound(id) {
+                const m=state.models.get(state.byId.get(id));
+                if(!state.acceptsInput()||!m?.inlineSoundPreview||m.enabled===false)return;
+                state.select(id,false);
+                state.editors.action({...m,parentId:m.id,editorAction:"preview"});state.refresh();
             },
             step(id, delta) {
                 const m = state.models.get(state.byId.get(id));
@@ -241,7 +249,7 @@ function createMenu(UE, puerts, framework, report) {
                 else if (["Left", "A", "Gamepad_DPad_Left", "Gamepad_LeftStick_Left"].includes(name)) state.step(id, -1);
                 else if (["Right", "D", "Gamepad_DPad_Right", "Gamepad_LeftStick_Right"].includes(name)) state.step(id, 1);
                 else if (["Enter", "SpaceBar", "Gamepad_FaceButton_Bottom"].includes(name)) {
-                    if (!repeat) { const m = state.models.get(state.byId.get(id)); if (m?.type === "action") state.action(id); else state.step(id, 1); }
+                    if (!repeat) { const m = state.models.get(state.byId.get(id)); if(m?.inlineSoundPreview)state.previewSound(id);else if (m?.type === "action") state.action(id); else state.step(id, 1); }
                 } else if (["Z", "C", "Escape", "Gamepad_FaceButton_Right", "Gamepad_LeftShoulder", "Gamepad_RightShoulder",
                     "Gamepad_LeftTrigger", "Gamepad_RightTrigger"].includes(name)) return false;
                 // Native tab actions retain ownership of Z/C and shoulder/trigger input, including repeats.
@@ -265,7 +273,7 @@ function createMenu(UE, puerts, framework, report) {
                 state.hostScope.bind(host.OnHostDeactivated, () => state.cover());
                 state.hostScope.bind(host.OnHostReactivated, () => state.resume());
             },
-            cover() { state.covered = true; state.editors.close(); state.pendingFocus = state.selected || state.pendingFocus; state.flush(); },
+            cover() { state.covered = true; state.editors.close();state.previewPane?.hide(); state.pendingFocus = state.selected || state.pendingFocus; state.flush(); },
             resume() {
                 if (state.disposed) return;
                 state.covered = false;
@@ -289,6 +297,7 @@ function createMenu(UE, puerts, framework, report) {
                 // before calling provider-owned cleanup, including during dispose.
                 state.active = false;
                 state.editors.close();
+                state.previewPane?.hide();
                 state.pendingFocus = null; state.flush();
                 if (state.layout) {
                     state.layout.detailRoot.SetVisibility(ui.V.Collapsed);
@@ -326,7 +335,7 @@ function createMenu(UE, puerts, framework, report) {
                 states.delete(panel);
             }
         };
-        state.editors = createEditors(framework,{word:state.word,refresh:()=>state.queueRefresh()});
+        state.editors = createEditors(framework,{word:state.word,refresh:()=>state.queueRefresh(),compactSound:true});
         states.set(panel, state);
         try {
             state.tabs = panel.W_OverlayTabList_C;
@@ -345,6 +354,8 @@ function createMenu(UE, puerts, framework, report) {
             for (const name of ["ScrollBarStyle", "ScrollBarPadding", "HorizontalEntrySpacing", "VerticalEntrySpacing"]) if (panel.ListView_Settings[name] !== undefined) state.list[name] = panel.ListView_Settings[name];
             state.detailView = ui.widget(panel, panel.Details_Settings.GetClass());
             state.footer = createFooter(UE, ui, state, report);
+            state.previewPane=createPreviewPane(UE,ui,state,framework,report);
+            state.scope.own(()=>state.previewPane.dispose());
             state.layout = ui.mount(panel, state.list, state.detailView);
             state.layout.detailRoot.SetVisibility(ui.V.Collapsed);
             state.scope.bind(state.list.BP_OnEntriesGenerated, () => { state.entriesGenerated = true; state.focusReady(); });

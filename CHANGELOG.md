@@ -1,5 +1,9 @@
 # 更新记录
 
+## 0.3.6
+
+音色选择与试听合为一行；颜色编辑增加调色盘与前后对比；支持接入模组的右侧即时预览。保留协议1、旧模组与保存值。新增界面及暂停菜单试听尚待游戏内验证。
+
 ## 0.3.5
 
 Correct the signed package channel from preview to stable so the installer offers the official release. Retains 0.3.4's native slider layout: current value when unselected, minimum and maximum endpoints plus a thumb-following value when adjusting. Percentage, integer and color values update immediately. Runtime behavior and existing settings are unchanged.
