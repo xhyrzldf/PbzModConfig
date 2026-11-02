@@ -59,3 +59,12 @@ test("停止回调重入创建预览时，外层不覆盖或遗留新的预览",
     assert.equal(fw.openVisual(handle,{}).error,"PREVIEW_CHANGED");assert.equal(created,2);assert.equal(newer.update("tint"),true);
     fw.dispose();assert.equal(ended,2);reg.dispose();store.dispose();
 });
+test("可选预览白名单属于各模组，非外观行不打开；非法清单只禁用预览，旧提供者保持可用",()=>{
+    const root={},store=createStore(descriptor(),createJournal(memoryIO(),'Components'),clock());let ended=0;
+    const reg=publishOptional({...store,visualPreviewKeys:['tint'],createVisualPreview:()=>({update(){},dispose(){ended++;}})},root);
+    const fw=createFramework(getHub(root)),p=fw.pages()[0];assert.equal(fw.hasVisual(p.handle,'tint'),true);assert.equal(fw.hasVisual(p.handle,'sound'),false);assert.equal(fw.hasVisual(p.handle,'@reset'),false);
+    const v=fw.openVisual(p.handle,{});assert.equal(v.update('tint'),true);assert.equal(v.update('sound'),false);assert.equal(ended,1);
+    reg.dispose();const events=[],bad=publishOptional({...store,visualPreviewKeys:['missing'],createVisualPreview:()=>({update(){},dispose(){}})},root);
+    const second=createFramework(getHub(root),{report:e=>events.push(e)}),q=second.pages()[0];assert.equal(second.hasVisual(q.handle,'tint'),false);assert.equal(second.edit(q.handle,'mode','b',q.revision).ok,true);assert.ok(events.some(e=>e.code==='VISUAL_PREVIEW_KEYS_INVALID'));
+    second.dispose();bad.dispose();fw.dispose();store.dispose();
+});

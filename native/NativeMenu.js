@@ -5,10 +5,11 @@ const { createFooter } = require("./NativeFooter");
 const { createIconLoader } = require("./NativeIcon");
 const { createEditors } = require("../src/Editors");
 const { createPreviewPane } = require("./NativePreview");
+const { createNavigation } = require("../src/Navigation");
 const { resolve, gameLanguage } = require("../src/Localization");
 const { words: WORDS } = require("../src/LocaleStrings");
 const TAB = "PbzModConfig";
-function createMenu(UE, puerts, framework, report) {
+function createMenu(UE, puerts, framework, report, options={}) {
     const ui = createSupport(UE, report), states = new Map(), tokenOwners = new Map();
     const expanded = new Map(), loadIcon = createIconLoader(UE, ui, report);
     let rowFactory;
@@ -16,6 +17,7 @@ function createMenu(UE, puerts, framework, report) {
         if (states.has(panel)) return states.get(panel);
         if (!rowFactory) rowFactory = createRows(UE, puerts, ui, tokenOwners, report);
         const state = {
+            navigation:createNavigation({now:options.now}),
             panel, scope: ui.lifetime(), hostScope: null, disposed: false, active: false, covered: false,
             confirming: false, entries: new Map(), models: new Map(), byId: new Map(), owners: new Map(),
             selected: null, pendingFocus: null, entriesGenerated: false, refreshTimer: null, locale: "zhHans",
@@ -243,12 +245,10 @@ function createMenu(UE, puerts, framework, report) {
                 if (target) state.select(target, true);
             },
             key(id, name, repeat, modifiers) {
-                if (state.editors.key(name,repeat,modifiers)) { state.refresh(); return true; }
-                if (["Up", "W", "Gamepad_DPad_Up", "Gamepad_LeftStick_Up"].includes(name)) state.move(id, -1);
-                else if (["Down", "S", "Gamepad_DPad_Down", "Gamepad_LeftStick_Down"].includes(name)) state.move(id, 1);
-                else if (["Left", "A", "Gamepad_DPad_Left", "Gamepad_LeftStick_Left"].includes(name)) state.step(id, -1);
-                else if (["Right", "D", "Gamepad_DPad_Right", "Gamepad_LeftStick_Right"].includes(name)) state.step(id, 1);
-                else if (["Enter", "SpaceBar", "Gamepad_FaceButton_Bottom"].includes(name)) {
+                if (state.editors.key(name,repeat,modifiers)) { state.navigation.reset();state.refresh(); return true; }
+                const nav=state.navigation.key(name);
+                if(nav){if(nav.fire)state[nav.kind](id,nav.delta);return true;}
+                if (["Enter", "SpaceBar", "Gamepad_FaceButton_Bottom"].includes(name)) {
                     if (!repeat) { const m = state.models.get(state.byId.get(id)); if(m?.inlineSoundPreview)state.previewSound(id);else if (m?.type === "action") state.action(id); else state.step(id, 1); }
                 } else if (["Z", "C", "Escape", "Gamepad_FaceButton_Right", "Gamepad_LeftShoulder", "Gamepad_RightShoulder",
                     "Gamepad_LeftTrigger", "Gamepad_RightTrigger"].includes(name)) return false;
@@ -256,15 +256,11 @@ function createMenu(UE, puerts, framework, report) {
                 // Other keys stay in this native settings page, including business mod hotkeys.
                 return true;
             },
+            keyUp(name){const handled=state.navigation.keyUp(name);return state.editors.keyUp(name)||handled;},
             analog(id, name, value) {
                 if (state.editors.capturing) return true;
-                if (name !== "Gamepad_LeftX" && name !== "Gamepad_LeftY") return false;
-                if (Math.abs(value) < 0.5) { state.heldAxis = null; return true; }
-                const direction = name + Math.sign(value), now = Date.now();
-                if (state.heldAxis !== direction || now - state.lastAxisTime > 220) {
-                    state.heldAxis = direction; state.lastAxisTime = now;
-                    if (name === "Gamepad_LeftY") state.move(id, value > 0 ? -1 : 1); else state.step(id, value > 0 ? 1 : -1);
-                }
+                const nav=state.navigation.analog(name,value);if(!nav)return false;
+                if(nav.fire)state[nav.kind](id,nav.delta);
                 return true;
             },
             bindHost() {
@@ -273,7 +269,7 @@ function createMenu(UE, puerts, framework, report) {
                 state.hostScope.bind(host.OnHostDeactivated, () => state.cover());
                 state.hostScope.bind(host.OnHostReactivated, () => state.resume());
             },
-            cover() { state.covered = true; state.editors.close();state.previewPane?.hide(); state.pendingFocus = state.selected || state.pendingFocus; state.flush(); },
+            cover() { state.navigation.reset();state.covered = true; state.editors.close();state.previewPane?.hide(); state.pendingFocus = state.selected || state.pendingFocus; state.flush(); },
             resume() {
                 if (state.disposed) return;
                 state.covered = false;
@@ -296,6 +292,7 @@ function createMenu(UE, puerts, framework, report) {
                 // Audio stop callbacks can re-enter menu actions. Revoke input
                 // before calling provider-owned cleanup, including during dispose.
                 state.active = false;
+                const navigation=state.navigation.flush();if(navigation.accepted)report({code:"NAVIGATION_SUMMARY",...navigation});
                 state.editors.close();
                 state.previewPane?.hide();
                 state.pendingFocus = null; state.flush();

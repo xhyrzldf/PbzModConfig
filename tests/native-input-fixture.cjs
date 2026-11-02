@@ -80,7 +80,11 @@ function fixture(options = {}) {
                 this.live = false; cleanup.splice(0).forEach(fn => fn());
             } };
         },
-        native(owner,kind) { return kind === "CommonListView" ? list : Object.assign(widget(),{SetBrushFromTexture(){},SetColorAndOpacity(){},SetMinValue(){},SetMaxValue(){},SetStepSize(){},SetValue(value){this.value=value;},SetDisplayValue(value){this.displayValue=value;}}); },
+        native(owner,kind) {
+            if(kind==="CommonListView")return list;
+            if(kind==="CanvasPanel")return Object.assign(widget(),{AddChildToCanvas(){return{SetAnchors(){},SetAlignment(){},SetPosition(){},SetSize(){}};}});
+            return Object.assign(widget(),{SetBrushFromTexture(){},SetColorAndOpacity(){},SetMinValue(){},SetMaxValue(){},SetStepSize(){},SetValue(value){this.value=value;},SetDisplayValue(value){this.displayValue=value;}});
+        },
         widget(owner, type) {
             if (type === "FixtureRotator") return rotator();
             return Object.assign(widget(), { Button_Action: widget(), Button_Decrease:widget(), Button_Increase:widget(),
@@ -121,7 +125,7 @@ function fixture(options = {}) {
         return realRequire(name); // NativeRows and framework logic are the actual implementations.
     }, setTimeout: () => 1, clearTimeout() {}, setInterval: () => 1, clearInterval() {} };
     vm.runInNewContext(fs.readFileSync(filename, "utf8"), sandbox, { filename });
-    const menu = sandbox.module.exports.createMenu(UE, puerts, framework, event => reports.push(event));
+    const menu = sandbox.module.exports.createMenu(UE, puerts, framework, event => reports.push(event),{now:options.now});
     const state = menu.create(panel);
     panel.CurrentCollection = state.collection; state.show();
     const id = "PbzMapTracker/@title", item = state.byId.get(id);
@@ -144,7 +148,8 @@ function fixture(options = {}) {
         key: (key, repeat = false) => host.OnPreviewKeyDown({}, { key, repeat }),
         bind(id) {
             const h=new RowHost();
-            h.WidgetTree={RootWidget:{GetChildrenCount:()=>0,AddChild:()=>({SetAnchors(){},SetAlignment(){},SetPosition(){},SetSize(){}})}};
+            // The actual host is not a CanvasSlot: no anchor/position methods.
+            h.WidgetTree={RootWidget:{GetChildrenCount:()=>0,AddChild:()=>({SetHorizontalAlignment(){},SetVerticalAlignment(){},SetPadding(){}})}};
             h.OnListItemObjectSet(state.byId.get(id));state.selected=id;
             if(!state.entries.has(id))throw Error("Row failed: "+JSON.stringify(reports));
             return h;

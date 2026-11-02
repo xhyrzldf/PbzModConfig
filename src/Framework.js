@@ -71,6 +71,12 @@ function createFramework(hub, options = {}) {
                     if (extended) record.descriptor = extended;
                 }
                 record.schema = S.compile(record.descriptor, report);
+                if(record.descriptor.visualPreviewKeys!==undefined){
+                    const keys=record.descriptor.visualPreviewKeys;
+                    const valid=Array.isArray(keys)&&keys.every(k=>typeof k==="string"&&record.schema.values.has(k));
+                    record.previewKeys=new Set(valid?keys:[]);
+                    if(!valid)report({code:"VISUAL_PREVIEW_KEYS_INVALID",modId:record.modId});
+                }
                 // Subscribe first, then read. Providers may synchronously notify on subscribe.
                 record.unsubscribe = record.descriptor.subscribe(() => {
                     if (disposed || !record.active || records.get(item.modId) !== record) return;
@@ -155,7 +161,7 @@ function createFramework(hub, options = {}) {
         edit(handle, key, value, revision) { return operate(handle, "apply", { [key]: value }, revision); },
         reset(handle, groupId, revision) { return operate(handle, "reset", groupId, revision); },
         action(handle, key, revision) { return operate(handle, "invokeAction", key, revision); },
-        hasVisual(handle) { const r=lookup(handle);return !!r&&!r.error&&typeof r.descriptor.createVisualPreview==="function"; },
+        hasVisual(handle,key) { const r=lookup(handle);return !!r&&!r.error&&typeof r.descriptor.createVisualPreview==="function"&&(key===undefined||(r.schema.values.has(key)&&(!r.previewKeys||r.previewKeys.has(key)))); },
         openVisual(handle, context) {
             const generation=stopVisual(),record=lookup(handle);
             if(generation!==visualGeneration)return {ok:false,error:"PREVIEW_CHANGED"};
@@ -168,6 +174,7 @@ function createFramework(hub, options = {}) {
                 const own={record,controller};visual=own;
                 return {ok:true,update(key,draft){
                     if(visual!==own||lookup(handle)!==record)return false;
+                    if(!record.schema.values.has(key)||(record.previewKeys&&!record.previewKeys.has(key))){stopVisual();return false;}
                     const current=read(record);if(!current){stopVisual();return false;}
                     const values=S.copy(current.values),entry=record.schema.entries.get(key);
                     // Only a validated color draft may override saved values. Never call apply here.

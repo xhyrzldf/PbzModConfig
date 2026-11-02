@@ -137,7 +137,15 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
                     preview.OptionsScalingSizeBox.RemoveFromParent();
                     preview.SetIsInteractionEnabled(true);preview.SetIsFocusable(false);
                     preview.SetVisibility(ui.V.Visible);b.controls.push(preview);
-                    const ps=root.AddChild(preview),anchors=new UE.Anchors();
+                    // Row hosts can have OverlaySlot/BoxSlot roots. Only our own
+                    // CanvasPanel promises the anchor/position API used below.
+                    const previewLayer=ui.native(state.panel,"CanvasPanel");
+                    previewLayer.SetVisibility(ui.V.SelfHitTestInvisible);
+                    const layerSlot=root.AddChild(previewLayer);
+                    if(layerSlot.SetHorizontalAlignment)layerSlot.SetHorizontalAlignment(UE.EHorizontalAlignment.HAlign_Fill);
+                    if(layerSlot.SetVerticalAlignment)layerSlot.SetVerticalAlignment(UE.EVerticalAlignment.VAlign_Fill);
+                    scope.own(()=>previewLayer.RemoveFromParent());
+                    const ps=previewLayer.AddChildToCanvas(preview),anchors=new UE.Anchors();
                     anchors.Minimum=new UE.Vector2D(1,.5);anchors.Maximum=anchors.Minimum;
                     ps.SetAnchors(anchors);ps.SetAlignment(new UE.Vector2D(1,.5));
                     ps.SetPosition(new UE.Vector2D(-20,0));ps.SetSize(new UE.Vector2D(100,48));
@@ -291,7 +299,7 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
         OnPreviewKeyDown(geometry, event) { return key(this, event); }
         OnKeyUp(geometry,event) {
             const b=bindings.get(this),name=String(UE.KismetInputLibrary.GetKey(event).KeyName);
-            return b?.state.acceptsInput() && b.state.editors.keyUp(name) ? UE.WidgetBlueprintLibrary.Handled() : UE.WidgetBlueprintLibrary.Unhandled();
+            return b?.state.acceptsInput() && b.state.keyUp(name) ? UE.WidgetBlueprintLibrary.Handled() : UE.WidgetBlueprintLibrary.Unhandled();
         }
         OnPreviewMouseButtonDown(geometry,event) {
             const b=bindings.get(this);

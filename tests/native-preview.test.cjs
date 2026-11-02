@@ -1,6 +1,7 @@
 "use strict";
 const test=require('node:test'),assert=require('node:assert/strict');
 const {createPreviewPane}=require('../native/NativePreview'),{createEditors}=require('../src/Editors'),{setup}=require('./components-fixture.cjs');
+const {publishOptional}=require('../provider/Protocol');
 function fixture(){
     const widgets=[],releases=[],x=setup(),events=[];
     class Vector{constructor(X,Y){Object.assign(this,{X,Y});}}
@@ -38,4 +39,21 @@ test('无预览扩展的旧提供者不会创建面板，菜单遮盖后不接�
         assert.equal(wheel.click({X:0,Y:0},{key:'LeftMouseButton',position:{X:180,Y:90}}),false);assert.equal(f.state.editors.colorDraft,before);f.pane.hide();
         assert.equal(f.widgets.find(w=>w.type==='SizeBox').visibility,0);
     }finally{f.close();}
+});
+
+test('右侧按当前配置键决定显示，离开外观行释放预览，颜色子行仍使用原颜色键',()=>{
+    const f=fixture(),updates=[];let created=0,disposed=0;
+    const registration=publishOptional({...f.store,visualPreviewKeys:['tint'],createVisualPreview:()=>{
+        created++;return {update:frame=>updates.push(frame.key),dispose:()=>disposed++};
+    }},f.root);
+    try{
+        const page=f.page(),model=key=>({...page.rows.find(row=>row.key===key),page});
+        f.pane.update(model('sound'));assert.equal(created,0);assert.equal(f.widgets.some(w=>w.type==='SizeBox'),false);
+        f.pane.update(model('tint'));assert.equal(created,1);assert.deepEqual(updates,['tint']);
+        f.pane.update(model('enabled'));assert.equal(disposed,1);assert.equal(f.widgets.find(w=>w.type==='SizeBox').visibility,0);
+        f.pane.update({...model('tint'),section:true});assert.equal(created,1);
+        const tint=model('tint');f.state.editors.action(f.state.editors.rows(tint)[0]);
+        f.pane.update({...tint,key:'@color.red'});assert.equal(created,2);assert.equal(updates.at(-1),'tint');
+        f.pane.hide();assert.equal(disposed,2);assert.equal(f.events.length,0);
+    }finally{registration.dispose();f.close();}
 });

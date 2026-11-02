@@ -37,6 +37,7 @@ test("键盘方向和确认保持配置操作，页签键不触发改值或动�
     const f = fixture(); t.after(() => f.dispose());
     for (const key of ["Up", "W", "Down", "S", "Left", "A", "Right", "D"]) {
         assert.equal(f.key(key), "handled", key);
+        assert.equal(f.host.OnKeyUp({}, {key}),"handled",`${key} release`);
     }
     for (const key of ["Enter", "SpaceBar"]) {
         assert.equal(f.key(key), "handled", key);

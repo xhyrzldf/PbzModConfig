@@ -63,11 +63,14 @@
 ```js
 const registration = publishOptional({
     ...store,
+    visualPreviewKeys: ["reticle.size", "reticle.color"], // 必须是此模组已有的配置键
     createVisualPreview: context => createReticlePreview(context)
 });
 ```
 
 其中`createReticlePreview`由准星模组实现：在`context.host`中创建自有控件，返回`update({key, values, locale, revision})`和`dispose()`。`update`用当前快照更新大小、颜色等外观；`dispose`移除控件和自有计时器。它不需要引用其他业务模组，也不需要修改ModConfig源码。完整声音与颜色控件接入方式见[扩展示例](demo/ExtendedProvider.js)。
+
+0.3.7增加可选`visualPreviewKeys: string[]`。它列出需要右侧预览的已注册配置键；其余选项、分组和重置行不创建预览，离开时释放预览。颜色子项使用原颜色键判断。空数组表示全部关闭；未知键或非数组记录`VISUAL_PREVIEW_KEYS_INVALID`并仅禁用预览，不阻断配置。未提供该字段的旧工厂保留全部配置项可预览的行为，旧框架忽略此字段，因此提供者的`update`也应对无关键清理自己的画面。清单只控制显示范围，同一模组各选项的具体内容仍由工厂按`key`绘制。
 
 `dispose()`必须幂等并清理计时器、声音、回调和自有控件。切换提供者、关闭、覆盖菜单、注销或预览故障会释放控制器；过期句柄不能释放后来创建的预览。工厂与控制器均不接受Promise。旧接入方不需要实现此接口，旧框架忽略它；新扩展仍经`publishOptional`发布，配置保留规则不变。
 

@@ -51,7 +51,8 @@ function createPreviewPane(UE,ui,state,framework,report){
     return {
         update(model){
             if(dead||!state.acceptsInput()){hide();return;}
-            const edit=state.editors.colorEdit,handle=model?.page?.handle,showVisual=!!handle&&framework.hasVisual(handle)&&!model.section;
+            const edit=state.editors.colorEdit,handle=model?.page?.handle,key=edit?.key||model?.key;
+            const showVisual=!!handle&&typeof key==="string"&&framework.hasVisual(handle,key)&&!model.section;
             if(!edit&&!showVisual){hide();return;}
             try{
                 ensure();pane.SetVisibility(ui.V.SelfHitTestInvisible);state.detailView.Box_DetailsExtension.SetVisibility(ui.V.SelfHitTestInvisible);
@@ -59,7 +60,6 @@ function createPreviewPane(UE,ui,state,framework,report){
                 if(showVisual){
                     host.SetVisibility(ui.V.HitTestInvisible);
                     if(ownerToken!==handle.ownerToken){release();if(failedToken!==handle.ownerToken){const r=framework.openVisual(handle,{owner:state.panel,host,width:1040,height:585,setCaption:value=>ui.text(caption,value),report:error=>report({code:"PROVIDER_PREVIEW_FAILED",detail:String(error)})});if(r.ok){controller=r;ownerToken=handle.ownerToken;}else failedToken=handle.ownerToken;}}
-                    const key=edit?.key||model.key;
                     if(controller&&!controller.update(key,edit)){release();failedToken=handle.ownerToken;}
                 }else{release();host.SetVisibility(ui.V.Collapsed);}
                 caption.SetVisibility(showVisual?ui.V.HitTestInvisible:ui.V.Collapsed);
