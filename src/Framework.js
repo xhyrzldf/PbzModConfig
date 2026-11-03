@@ -19,16 +19,17 @@ function createFramework(hub, options = {}) {
     function emit(event) {
         for (const listener of Array.from(listeners)) try { listener(event); } catch (e) { report({ code: "VIEW_FAILED", detail: String(e) }); }
     }
-    function fault(record, operation, error) {
+    function fault(record, operation, notify = true) {
         if (playback?.record === record) stopPreview();
         if (visual?.record === record) stopVisual();
-        const next = { code: "PROVIDER_FAILED", operation, detail: String(error) };
-        if (JSON.stringify(record.error) === JSON.stringify(next)) return;
-        record.error = next;
+        // Error text may be huge or change on every read. Retain only the fixed
+        // operation, so rendering the same fault cannot generate new work.
+        if (record.error?.operation === operation) return;
+        record.error = Object.freeze({ code: "PROVIDER_FAILED", operation });
         report({ modId: record.modId, ...record.error });
-        emit({ type: "error", modId: record.modId });
+        if (notify) emit({ type: "error", modId: record.modId });
     }
-    function read(record) {
+    function read(record, notify = true) {
         if (record.attachmentError) return null;
         try {
             const value = record.descriptor.read();
@@ -44,7 +45,7 @@ function createFramework(hub, options = {}) {
             }
             record.error = null;
             return S.copy(value);
-        } catch (e) { fault(record, "read", e); return null; }
+        } catch (_) { fault(record, "read", notify); return null; }
     }
     function release(record) {
         if (playback?.record === record) stopPreview();
@@ -87,7 +88,7 @@ function createFramework(hub, options = {}) {
                 read(record);
             } catch (e) {
                 record.attachmentError = true;
-                fault(record, "attach", e);
+                fault(record, "attach");
             }
         }
         emit({ type: "providers" });
@@ -129,14 +130,15 @@ function createFramework(hub, options = {}) {
             const latest = read(record);
             emit({ type: "values", modId: record.modId });
             return { ...result, ...(latest || {}) };
-        } catch (e) { fault(record, operation, e); return { ok: false, error: "PROVIDER_FAILED" }; }
+        } catch (_) { fault(record, operation); return { ok: false, error: "PROVIDER_FAILED" }; }
     }
     return {
         subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
         setLanguage(value) { const next = L.language(value); if (locale !== next) { locale = next; emit({ type: "language" }); } },
         pages() {
             return Array.from(records.values()).sort((a, b) => a.modId.localeCompare(b.modId)).map(record => {
-                const current = record.schema && read(record);
+                // The caller renders this result now; do not schedule another render.
+                const current = record.schema && read(record, false);
                 const handle = { modId: record.modId, ownerToken: record.ownerToken };
                 if (!current) return { handle, title: record.modId, modVersion: "", error: record.error, rows: [] };
                 const groups = Array.from(record.schema.groups.values()).sort((a, b) => (a.order || 0) - (b.order || 0));

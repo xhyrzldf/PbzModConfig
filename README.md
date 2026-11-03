@@ -2,11 +2,11 @@
 
 在游戏原生设置中增加「模组」页签，为接入的模组提供统一的配置界面。
 
-**版本：0.3.9** · **目标游戏构建：Steam 26266538 / UE 5.7.4**
+**版本：0.3.10** · **目标游戏构建：Steam 26266538 / UE 5.7.4**
 
 作者：[皮一下就很凡@Bilibili](https://space.bilibili.com/26786884)
 
-0.3.9：新增越南语公共菜单和原生越南语选项字体，支持地图收集追踪的越南语选择。保留配置协议与已有功能。离线回归通过；本版尚未进行游戏内验证。
+0.3.10：完善故障信息记录与反馈收集，优化模组菜单运行稳定性。
 
 ## 功能
 
@@ -45,7 +45,7 @@
 在仓库根目录执行（替换示例路径）：
 
 ```powershell
-python build.py --source-root "<脚本导出根目录>" --game-root "<游戏安装目录>" --repak "<repak.exe路径>" --retoc "<retoc.exe路径>" --out .local/build-0.3.9
+python build.py --source-root "<脚本导出根目录>" --game-root "<游戏安装目录>" --repak "<repak.exe路径>" --retoc "<retoc.exe路径>" --out .local/build-0.3.10
 ```
 
 输出是 `zzz_PBZModConfig_P.pak/.utoc/.ucas` 三件套及哈希清单。输出必须位于本仓库 `.local/` 下的新子目录；脚本不会安装模组，也不会覆盖旧构建。
@@ -64,7 +64,7 @@ python build.py --source-root "<脚本导出根目录>" --out .local/stage-check
 
 升级前先移走本框架的旧三件套，避免多个版本同时加载。卸载时只移除 `zzz_PBZModConfig_P.pak/.utoc/.ucas`，业务模组及其配置会保留。
 
-配置和诊断位于用户文档目录的 `PbzMods/Config/`。诊断文件为 `PbzModConfig/diagnostics/New_CSV.csv`，其中存放 JSON 文本。使用安装器的签名包见 [安装器适配](INSTALLER.md)。
+配置位于用户文档目录的 `PbzMods/Config/`。本版仅在内存中保留有上限的故障分类计数，不自动写诊断文件；退出游戏后这些记录不会保留。安装器主动反馈可以按需附带旧版本已有的诊断文件。使用安装器的签名包见 [安装器适配](INSTALLER.md)。
 
 ## 开发检查
 

@@ -1,3 +1,9 @@
+## 0.3.10
+
+The complete code review passed and all 192 JavaScript checks passed. On Steam build 26266538, opening and closing the menu, loading a save from settings, returning to the title screen, continuing, and reopening the menu were tested successfully. The release payload differs from the tested candidate only in its version string. Automated checks and an offline build are repeated for this public source export.
+
+Fault records are bounded in memory. This version adds no automatic diagnostic file writes, background performance sampler, or diagnostic network requests. Records are lost when the game process exits. Existing historical diagnostic files may be attached through installer feedback. Continuous frame-time and memory measurements were not performed; this coverage does not establish performance on every system.
+
 ## 0.3.9
 
 八语言切换、原生越南语选项字体和框架回归通过。发行载荷与独立构建逐文件比较；游戏内字形、布局和控制器行为未在本版实测。

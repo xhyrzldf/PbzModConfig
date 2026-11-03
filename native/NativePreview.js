@@ -37,24 +37,27 @@ function createPreviewPane(UE,ui,state,framework,report){
         swatches=[colorImage(canvas,210,320,64,48),colorImage(canvas,286,320,64,48)];
         labels=[label(state.word("colorBefore"),210,290,76),label(state.word("colorAfter"),286,290,100)];
         const choose=(geometry,event)=>{
-            if(dead||!state.acceptsInput()||!state.editors.colorEdit||String(UE.KismetInputLibrary.PointerEvent_GetEffectingButton(event).KeyName)!=="LeftMouseButton")return UE.WidgetBlueprintLibrary.Unhandled();
+            if(dead)return UE.WidgetBlueprintLibrary.Unhandled();
             try{
+                if(!state.acceptsInput()||!state.editors.colorEdit||String(UE.KismetInputLibrary.PointerEvent_GetEffectingButton(event).KeyName)!=="LeftMouseButton")return UE.WidgetBlueprintLibrary.Unhandled();
                 const p=UE.SlateBlueprintLibrary.AbsoluteToLocal(geometry,UE.KismetInputLibrary.PointerEvent_GetScreenSpacePosition(event));
                 const value=Palette.wheel(state.editors.colorDraft,p.X,p.Y,S);
                 if(value)state.editors.pickColor(value);
-            }catch(e){report({code:"COLOR_PALETTE_INPUT_FAILED",detail:String(e)});}
-            return UE.WidgetBlueprintLibrary.Handled();
+                return UE.WidgetBlueprintLibrary.Handled();
+            }catch(e){state.fail(e,"COLOR_PALETTE_INPUT_FAILED");return UE.WidgetBlueprintLibrary.Unhandled();}
         };
-        wheel.OnMouseButtonDownEvent.Bind(choose);scope.own(()=>wheel.OnMouseButtonDownEvent.Unbind());
+        // Bind can fail after registering the delegate; cleanup must already own it.
+        scope.own(()=>wheel.OnMouseButtonDownEvent.Unbind());wheel.OnMouseButtonDownEvent.Bind(choose);
     }
     function hide(){release();if(pane)pane.SetVisibility(ui.V.Collapsed);}
     return {
         update(model){
-            if(dead||!state.acceptsInput()){hide();return;}
-            const edit=state.editors.colorEdit,handle=model?.page?.handle,key=edit?.key||model?.key;
-            const showVisual=!!handle&&typeof key==="string"&&framework.hasVisual(handle,key)&&!model.section;
-            if(!edit&&!showVisual){hide();return;}
+            if(dead)return;
             try{
+                if(!state.acceptsInput()){hide();return;}
+                const edit=state.editors.colorEdit,handle=model?.page?.handle,key=edit?.key||model?.key;
+                const showVisual=!!handle&&typeof key==="string"&&framework.hasVisual(handle,key)&&!model.section;
+                if(!edit&&!showVisual){hide();return;}
                 ensure();pane.SetVisibility(ui.V.SelfHitTestInvisible);state.detailView.Box_DetailsExtension.SetVisibility(ui.V.SelfHitTestInvisible);
                 const colorY=showVisual?310:0;pane.SetHeightOverride(edit?colorY+190:310);
                 if(showVisual){
@@ -71,10 +74,12 @@ function createPreviewPane(UE,ui,state,framework,report){
                     swatches.forEach((w,i)=>w.Slot.SetPosition(new UE.Vector2D(210+i*76,colorY+40)));
                     const before=model.page.values[edit.key];[before,edit.value].forEach((hex,i)=>{const c=colorChannels(hex);swatches[i].SetColorAndOpacity(new UE.LinearColor(...c.slice(0,3).map(linear),(c[3]??255)/255));swatches[i].SetVisibility(ui.V.HitTestInvisible);});
                 }else if(wheel){wheel.SetVisibility(ui.V.Collapsed);marker.SetVisibility(ui.V.Collapsed);[...swatches,...labels].forEach(w=>w.SetVisibility(ui.V.Collapsed));}
-            }catch(e){hide();report({code:"PREVIEW_PANE_FAILED",detail:String(e)});}
+            // Stop the calling refresh/show stack after cleanup, so it cannot
+            // reactivate removed widgets. The owning callback contains this error.
+            }catch(e){state.fail(e,"PREVIEW_PANE_FAILED");throw e;}
         },
         hide,
-        dispose(){if(dead)return;dead=true;hide();scope.dispose();}
+        dispose(){if(dead)return;dead=true;try{hide();}finally{scope.dispose();}}
     };
 }
 module.exports={createPreviewPane};

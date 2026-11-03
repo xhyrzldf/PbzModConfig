@@ -17,7 +17,7 @@ PATCH = '\ntry { require("../../PbzModConfig/native/Entry").install(SettingPanel
 FILES = (
     "provider/Protocol.js", "provider/Schema.js", "provider/Controls.js", "provider/Compatibility.js", "provider/ConfigStore.js", "provider/Translations.js",
     "provider/Journal.js", "provider/EasyCsvIO.js", "provider/StorageRoot.js", "src/Framework.js", "src/Editors.js", "src/Localization.js", "src/LocaleStrings.js", "src/Metadata.js",
-    "native/NativeSupport.js", "native/NativeRows.js", "native/NativeMenu.js", "native/Entry.js", "native/NativeFooter.js", "native/NativeIcon.js", "native/NativePreview.js", "native/NativePreviewAudio.js", "src/ColorPalette.js", "src/Navigation.js",
+    "native/NativeSupport.js", "native/NativeRows.js", "native/NativeMenu.js", "native/Entry.js", "native/Diagnostics.js", "native/NativeFooter.js", "native/NativeIcon.js", "native/NativePreview.js", "native/NativePreviewAudio.js", "src/ColorPalette.js", "src/Navigation.js",
 )
 ASSETS = ("assets/modconfig-icon.png", "assets/color-wheel.png")
 

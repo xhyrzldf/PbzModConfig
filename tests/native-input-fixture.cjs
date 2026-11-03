@@ -5,6 +5,7 @@ const { getHub } = require("../provider/Protocol");
 const { createFramework } = require("../src/Framework");
 const { createDemo } = require("../demo/DemoProvider");
 const { memoryIO } = require("./fixtures.cjs");
+const { createSupport } = require("../native/NativeSupport");
 
 function array(values) {
     return { Num: () => values.length, Get: i => values[i], GetRef: i => values[i],
@@ -12,7 +13,7 @@ function array(values) {
 }
 function delegate() {
     const handlers = new Set();
-    return { Add: fn => handlers.add(fn), Remove: fn => handlers.delete(fn),
+    return { Add: fn => handlers.add(fn), Remove: fn => handlers.delete(fn), handlerCount: () => handlers.size,
         emit: (...args) => { for (const fn of [...handlers]) fn(...args); } };
 }
 function widget(type = "FixtureWidget") {
@@ -36,10 +37,11 @@ function rotator() {
 }
 
 function fixture(options = {}) {
-    const reports = [], root = {}, calls = [];
+    const reports = [], root = {}, calls = [], footerLinks = [];
+    const report = event => { reports.push(event); options.report?.(event); };
     // A normal optional provider populates the menu, as a business mod does.
     const provider = options.createProvider ? options.createProvider(root) : createDemo(memoryIO(), { root, modId: "PbzMapTracker" });
-    const framework = createFramework(getHub(root), { report: event => reports.push(event) });
+    const framework = createFramework(getHub(root), { report });
     let RowHost;
     const UE = {
         Class: { Load: name => name }, Object: {Load:()=>({})}, BuiltinText: {},
@@ -55,6 +57,7 @@ function fixture(options = {}) {
         KismetInternationalizationLibrary: { GetCurrentLanguage: () => options.engineLanguage || "en" },
         PBZBlueprintFunctionLibrary: { MakeTextByKey: () => options.menuText || "NEW GAME" },
         KismetTextLibrary: { Conv_TextToString: value => value },
+        KismetSystemLibrary: { LaunchURL: url => calls.push(["url", url]) },
         KismetInputLibrary: {
             GetKey: event => ({ KeyName: event.key }), InputEvent_IsRepeat: event => !!event.repeat,
             PointerEvent_GetEffectingButton:event=>({KeyName:event.key}),
@@ -66,11 +69,13 @@ function fixture(options = {}) {
         RowHost = implementation; config.generatedClass = implementation;
     } } };
     const list = Object.assign(widget(), {
-        BP_SetListItems() {}, RequestRefresh() {}, BP_SetSelectedItem() {}, BP_ScrollItemIntoView() {}
+        BP_SetListItems() {}, RequestRefresh() {}, BP_SetSelectedItem() {}, BP_ScrollItemIntoView() {},
+        BP_OnEntriesGenerated: delegate(), BP_OnEntryReleased: delegate(), BP_OnItemSelectionChanged: delegate(), BP_OnItemScrolledIntoView: delegate()
     });
     const ui = {
         V: { Visible: 0, SelfHitTestInvisible: 1, Collapsed: 2, Hidden:3, HitTestInvisible:4 }, valid: value => !!value,
         asText: value => value, text(label,value) {if(label)label.text=value;}, replaceControl(row,old,fresh) {fresh.parent=old.parent;},
+        copySlot() {},
         lifetime() {
             const cleanup = [];
             return { live: true, bind(event, fn) {
@@ -81,6 +86,11 @@ function fixture(options = {}) {
             } };
         },
         native(owner,kind) {
+            if(options.realFooter && kind==="Border") {
+                const link=Object.assign(widget(),{SetBrushColor(){},SetPadding(){},SetContent(value){this.content=value;}});
+                link.OnMouseButtonDownEvent={Bind(fn){link.click=fn;options.footerBind?.(link);},Unbind(){link.click=null;}};
+                footerLinks.push(link);return link;
+            }
             if(kind==="CommonListView")return list;
             if(kind==="CanvasPanel")return Object.assign(widget(),{AddChildToCanvas(){return{SetAnchors(){},SetAlignment(){},SetPosition(){},SetSize(){}};}});
             return Object.assign(widget(),{SetBrushFromTexture(texture){this.texture=texture;},SetColorAndOpacity(color){this.color=color;},SetMinValue(){},SetMaxValue(){},SetStepSize(){},SetValue(value){this.value=value;},SetDisplayValue(value){this.displayValue=value;}});
@@ -88,7 +98,8 @@ function fixture(options = {}) {
         widget(owner, type) {
             if (type === "FixtureRotator") return rotator();
             const decrease=widget(),increase=widget();
-            return Object.assign(widget(), { Button_Action: widget(), Button_Decrease:Object.assign(widget(),{parent:decrease}), Button_Increase:Object.assign(widget(),{parent:increase}),
+            return Object.assign(widget(), { RichText_DynamicDetails:widget(),Box_DetailsExtension:Object.assign(widget(),{AddChild:()=>({})}),
+            Button_Action: widget(), Button_Decrease:Object.assign(widget(),{parent:decrease}), Button_Increase:Object.assign(widget(),{parent:increase}),
             DecreaseOverlay:decrease, IncreaseOverlay:increase,
             Slider_SettingValue:widget(),InitCachedTexts(){},CurrentValue:widget(),Text_RightValue:widget(),Text_LeftValue:widget(),Text_SettingValue:widget(),
             SetSelected(selected){this.CurrentValue.SetVisibility(selected?3:1);for(const w of [this.Text_LeftValue,this.Text_RightValue,this.Text_SettingValue])w.SetVisibility(selected?1:3);},
@@ -97,8 +108,9 @@ function fixture(options = {}) {
             justification: 2, SetJustification(value) { this.justification=value; }, SetVisibility() {},
             Slot: { alignment: 2, SetHorizontalAlignment(value) { this.alignment=value; } }
         } }); },
-        mount: () => ({ root: widget(), detailRoot: widget(), external: false })
+        mount: owner => ({ root: widget(), detailRoot: widget(), external: !!options.externalDetails, originalDetails: owner.Details_Settings })
     };
+    if (options.realLifetimes) ui.lifetime = createSupport({}, report).lifetime;
     const children = [], buttons = new Map();
     const box = { GetChildrenCount: () => children.length, GetChildAt: i => children[i] };
     function addButton(id) {
@@ -114,19 +126,20 @@ function fixture(options = {}) {
         GetIndexByID: id => [...buttons.keys()].indexOf(id),
         RegisterTab(id) { addButton(id); return true; }, RemoveTab: id => buttons.delete(id), ResetTabSwitchTracking() {}
     };
-    const panel = { W_OverlayTabList_C: tabs, SettingCollections: array([{}]), SettingWidget: {},
+    const panel = { W_OverlayTabList_C: tabs, SettingCollections: array([{}]),
+        SettingWidget: {OnHostDeactivated: delegate(), OnHostReactivated: delegate()},
         ListView_Settings: { SelectionMode: 1 }, Details_Settings: widget(),
-        WidgetSwitcher_65: { SetActiveWidget(value) { this.active = value; }, GetActiveWidget() { return this.active; }, SetActiveWidgetIndex() {} } };
+        WidgetSwitcher_65: { SetActiveWidget(value) { this.active = value; }, GetActiveWidget() { return this.active; }, SetActiveWidgetIndex(index) {this.active=index;} } };
     const filename = path.join(__dirname, "../native/NativeMenu.js"), realRequire = createRequire(filename);
     const sandbox = { module: { exports: {} }, require(name) {
-        if (name === "./NativeSupport") return { createSupport: () => ui };
-        if (name === "./NativeFooter") return { createFooter: () => ({ update() {} }) };
-        if (name === "./NativePreview") return { createPreviewPane: () => ({update(){},hide(){},dispose(){}}) }; // Exercised with native-shaped widgets in native-preview.test.cjs.
+        if (name === "./NativeSupport") return { ...realRequire(name), createSupport: () => ui };
+        if (name === "./NativeFooter" && !options.realFooter) return { createFooter: () => ({ update() {} }) };
+        if (name === "./NativePreview" && !options.realPreview) return { createPreviewPane: () => ({update(){},hide(){},dispose(){}}) }; // Optional real preview for lifecycle integration.
         if (name === "./NativeIcon") return { createIconLoader: () => () => ({}) };
         return realRequire(name); // NativeRows and framework logic are the actual implementations.
-    }, setTimeout: () => 1, clearTimeout() {}, setInterval: () => 1, clearInterval() {} };
+    }, setTimeout: () => 1, clearTimeout() {}, setInterval: () => 1, clearInterval() {}, ...options.timerApi };
     vm.runInNewContext(fs.readFileSync(filename, "utf8"), sandbox, { filename });
-    const menu = sandbox.module.exports.createMenu(UE, puerts, framework, event => reports.push(event),{now:options.now});
+    const menu = sandbox.module.exports.createMenu(UE, puerts, framework, report,{now:options.now});
     const state = menu.create(panel);
     panel.CurrentCollection = state.collection; state.show();
     const id = "PbzMapTracker/@title", item = state.byId.get(id);
@@ -137,7 +150,7 @@ function fixture(options = {}) {
     state.selected = id;
     const originalAction=state.action;
     if(!options.liveActions)for (const name of ["move", "step", "action"]) state[name] = (...args) => calls.push([name, ...args]);
-    return { state, host, id, calls, reports,
+    return { state, host, id, calls, reports, ui, panel, menu, framework, UE, footerLinks,
         bindHeader() {
             originalAction(id); state.refresh();
             const header=[...state.models].find(([,m])=>m.type==="header");

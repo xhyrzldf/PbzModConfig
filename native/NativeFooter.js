@@ -13,19 +13,24 @@ function createFooter(UE, ui, state, report) {
     let lastOpen = 0, shown = false;
     if (typeof UE.KismetSystemLibrary.LaunchURL === "function" && typeof UE.KismetInputLibrary.PointerEvent_GetEffectingButton === "function") {
         const clicked = (geometry, event) => {
-            if (!shown || !state.acceptsInput() || String(UE.KismetInputLibrary.PointerEvent_GetEffectingButton(event).KeyName) !== "LeftMouseButton") return UE.WidgetBlueprintLibrary.Unhandled();
-            if (Date.now() - lastOpen > 750) {
-                lastOpen = Date.now();
-                try { UE.KismetSystemLibrary.LaunchURL(info.authorUrl); }
-                catch (e) { report({ code: "AUTHOR_LINK_FAILED", detail: String(e) }); }
+            if (!state.scope.live || state.disposed) return UE.WidgetBlueprintLibrary.Unhandled();
+            try {
+                if (!shown || !state.acceptsInput() || String(UE.KismetInputLibrary.PointerEvent_GetEffectingButton(event).KeyName) !== "LeftMouseButton") return UE.WidgetBlueprintLibrary.Unhandled();
+                if (Date.now() - lastOpen > 750) {
+                    lastOpen = Date.now();
+                    UE.KismetSystemLibrary.LaunchURL(info.authorUrl);
+                }
+                return UE.WidgetBlueprintLibrary.Handled();
+            } catch (e) {
+                state.fail(e, "AUTHOR_LINK_INPUT_FAILED");
+                return UE.WidgetBlueprintLibrary.Unhandled();
             }
-            return UE.WidgetBlueprintLibrary.Handled();
         };
         // This delegate belongs to our new Border, not an original game widget.
-        try {
-            link.OnMouseButtonDownEvent.Bind(clicked);
-            state.scope.own(() => link.OnMouseButtonDownEvent.Unbind());
-        } catch (e) { report({ code: "AUTHOR_LINK_UNAVAILABLE", detail: String(e) }); }
+        // Register cleanup first; a partially successful Bind must also unwind
+        // through the owning menu's creation boundary.
+        state.scope.own(() => link.OnMouseButtonDownEvent.Unbind());
+        link.OnMouseButtonDownEvent.Bind(clicked);
     } else report({ code: "AUTHOR_LINK_UNAVAILABLE" });
     return { update(visible) {
         shown = visible === true;

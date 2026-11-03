@@ -1,8 +1,16 @@
 "use strict";
+function isDestroyedObjectError(error) {
+    return error?.message === "passing a invalid object" || error?.message === "access a invalid object";
+}
 // Runtime-owned widgets only. No original asset, delegate list or input mapping is replaced.
 function createSupport(UE, report) {
     const V = UE.ESlateVisibility;
-    const valid = value => !!value && UE.KismetSystemLibrary.IsValid(value);
+    const valid = value => {
+        if (!value) return false;
+        // Build 26266538 can throw before IsValid receives a destroyed wrapper.
+        try { return UE.KismetSystemLibrary.IsValid(value); }
+        catch (error) { if (isDestroyedObjectError(error)) return false; throw error; }
+    };
     const is = (object, name) => !!object && !!UE[name] && object.IsA(UE[name].StaticClass());
     const widget = (owner, cls) => {
         const result = UE.WidgetBlueprintLibrary.Create(owner, cls, owner.GetOwningPlayer());
@@ -22,7 +30,7 @@ function createSupport(UE, report) {
         if (typeof label.SetPBZFormatText === "function") label.SetPBZFormatText(nativeText);
         else label.SetText(nativeText);
     }
-    function lifetime() {
+    function lifetime(onFailure) {
         let live = true;
         const releases = [];
         const scope = {
@@ -32,7 +40,11 @@ function createSupport(UE, report) {
                 if (!delegate || typeof delegate.Add !== "function" || typeof delegate.Remove !== "function") throw new Error("DELEGATE_NOT_EXPOSED");
                 const wrapped = (...args) => {
                     if (!live) return;
-                    try { handler(...args); } catch (e) { report({ code: "UI_CALLBACK_FAILED", detail: String(e) }); }
+                    try { handler(...args); } catch (e) {
+                        if (onFailure) {
+                            try { onFailure(e); } catch (_) { report({ code: "UI_FAILURE_HANDLER_FAILED" }); }
+                        } else report({ code: "UI_CALLBACK_FAILED", detail: String(e) });
+                    }
                 };
                 // Register removal first: an Add that partially succeeds must also unwind.
                 scope.own(() => delegate.Remove(wrapped));
@@ -43,7 +55,9 @@ function createSupport(UE, report) {
                 if (!live) return;
                 live = false;
                 for (const release of releases.splice(0).reverse()) {
-                    try { release(); } catch (e) { report({ code: "UI_RELEASE_FAILED", detail: String(e) }); }
+                    try { release(); } catch (e) {
+                        if (!isDestroyedObjectError(e)) report({ code: "UI_RELEASE_FAILED", detail: String(e) });
+                    }
                 }
             }
         };
@@ -101,23 +115,23 @@ function createSupport(UE, report) {
     function mount(owner, list, details) {
         const switcher = owner.WidgetSwitcher_65, copies = new Map();
         let source = owner.ListView_Settings, content = list;
-        for (let i = 0; i < 24; i++) {
-            const parent = source.GetParent();
-            if (!valid(parent)) throw new Error("SETTINGS_SWITCHER_NOT_FOUND");
-            if (parent === switcher) {
-                copySlot(source.Slot, switcher.AddChild(content));
-                break;
-            }
-            const copy = container(owner, parent);
-            copies.set(parent, copy);
-            copySlot(source.Slot, copy.AddChild(content));
-            source = parent; content = copy;
-        }
-        if (content.GetParent() !== switcher) throw new Error("SETTINGS_LAYOUT_TOO_DEEP");
-        const root = content;
         let detailSource = owner.Details_Settings, detailRoot = details, external = false;
         const created = [], edges = [];
         try {
+            for (let i = 0; i < 24; i++) {
+                const parent = source.GetParent();
+                if (!valid(parent)) throw new Error("SETTINGS_SWITCHER_NOT_FOUND");
+                if (parent === switcher) {
+                    copySlot(source.Slot, switcher.AddChild(content));
+                    break;
+                }
+                const copy = container(owner, parent);
+                copies.set(parent, copy);
+                copySlot(source.Slot, copy.AddChild(content));
+                source = parent; content = copy;
+            }
+            if (content.GetParent() !== switcher) throw new Error("SETTINGS_LAYOUT_TOO_DEEP");
+            const root = content;
             // Find a common ancestor BEFORE mounting; a direct parent can be inside the hidden native page.
             let join = null;
             for (let i = 0; i < 24; i++) {
@@ -140,11 +154,19 @@ function createSupport(UE, report) {
             }
             return { root, detailRoot, external, originalDetails: detailSource };
         } catch (e) {
-            root.RemoveFromParent(); detailRoot.RemoveFromParent();
-            for (const copy of created) copy.RemoveFromParent();
+            // No layout has been returned yet: unwind every owned widget here,
+            // including failures during the first list attachment. Never touch originals.
+            for (const owned of new Set([content, detailRoot, list, details, ...copies.values(), ...created])) {
+                try { if (valid(owned)) owned.RemoveFromParent(); }
+                catch (cleanup) {
+                    if (!isDestroyedObjectError(cleanup)) {
+                        try { report({code:"LAYOUT_ROLLBACK_FAILED", detail:String(cleanup)}); } catch (_) {}
+                    }
+                }
+            }
             throw e;
         }
     }
     return { V, valid, is, widget, native, asText, text, lifetime, copySlot, replaceControl, mount };
 }
-module.exports = { createSupport };
+module.exports = { createSupport, isDestroyedObjectError };

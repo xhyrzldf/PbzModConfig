@@ -1,5 +1,6 @@
 "use strict";
 const { colorChannels } = require("../provider/Controls");
+const { isDestroyedObjectError } = require("./NativeSupport");
 const EDITORS = "/Game/PBZContent/UI/Settings/Editors/";
 const SPEAKER = "/Game/PBZContent/UI/Settings/Texture/T_SecondTab_Settings_ShengYin.T_SecondTab_Settings_ShengYin";
 function heldModifiers(UE, owner) {
@@ -66,27 +67,34 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
         const binding = bindings.get(host);
         if (!binding) return;
         bindings.delete(host);
-        binding.scope.dispose();
         if (binding.state.entries.get(binding.id) === binding) binding.state.entries.delete(binding.id);
-        if (ui.valid(binding.row)) binding.row.RemoveFromParent();
+        // Release each owned resource even if another native owner has already died.
+        for (const action of [() => binding.scope.dispose(), () => {
+            if (ui.valid(binding.row)) binding.row.RemoveFromParent();
+        }]) {
+            try { action(); } catch (error) {
+                if (!isDestroyedObjectError(error)) report({ code: "ROW_RELEASE_FAILED", detail: String(error) });
+            }
+        }
     }
     function key(host, event) {
         const b = bindings.get(host);
         if (!b || !b.state.acceptsInput()) return UE.WidgetBlueprintLibrary.Unhandled();
-        const name = String(UE.KismetInputLibrary.GetKey(event).KeyName);
-        let modifiers;
-        if (b.state.editors.capturing) {
-            try { modifiers = heldModifiers(UE,host); }
-            catch(e) { report({code:"KEY_CAPTURE_FAILED",detail:String(e)}); b.state.editors.cancel();return UE.WidgetBlueprintLibrary.Handled(); }
+        try {
+            const name = String(UE.KismetInputLibrary.GetKey(event).KeyName);
+            let modifiers;
+            if (b.state.editors.capturing) modifiers = heldModifiers(UE,host);
+            return b.state.key(b.state.selected || b.id, name, UE.KismetInputLibrary.InputEvent_IsRepeat(event), modifiers)
+                ? UE.WidgetBlueprintLibrary.Handled() : UE.WidgetBlueprintLibrary.Unhandled();
+        } catch (error) {
+            b.state.fail(error); return UE.WidgetBlueprintLibrary.Unhandled();
         }
-        return b.state.key(b.state.selected || b.id, name, UE.KismetInputLibrary.InputEvent_IsRepeat(event), modifiers)
-            ? UE.WidgetBlueprintLibrary.Handled() : UE.WidgetBlueprintLibrary.Unhandled();
     }
     function attach(host, item) {
         release(host);
         const state = tokenOwners.get(item), model = state?.models.get(item);
         if (!state || state.disposed || !model) return;
-        const scope = ui.lifetime();
+        const scope = ui.lifetime(error => state.fail(error));
         let row;
         try {
             row = ui.widget(state.panel, cls(({ number: "Scalar", toggle: "Discrete", choice: "Discrete", action: "Discrete", header: "Header" })[model.type]));
@@ -130,8 +138,10 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
                     const labels = UE.NewArray(UE.BuiltinText);
                     current.options.forEach(option => labels.Add(ui.asText(option.label)));
                     fresh.PopulateTextLabels(labels);
+                    if (!scope.live) return;
                     const index = Math.max(0, current.options.findIndex(option => option.value === current.value));
                     fresh.SetSelectedItem(index);
+                    if (!scope.live) return;
                     styleChoice(fresh, current.options[index]?.label, state.locale);
                 };
                 if(model.inlineSoundPreview){
@@ -166,12 +176,13 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
                     scope.own(()=>preview.RemoveFromParent());
                     scope.bind(preview.OnButtonBaseClicked,()=>{if(editable())state.previewSound(b.id);});
                     b.refreshValue=(selected=state.selected===b.id)=>{
+                        if (!scope.live) return;
                         const m=state.models.get(item),ink=selected?.08:1;
                         icon.SetColorAndOpacity(new UE.LinearColor(ink,ink,ink,m?.previewPlaying?1:.68));
                         icon.SetRenderOpacity(m?.enabled===false?.4:1);
                     };
                     const update=b.update;b.update=current=>{
-                        update(current);b.refreshValue();
+                        update(current);if (scope.live) b.refreshValue();
                     };
                     b.previewControl=preview;b.previewIcon=icon;
                 }
@@ -214,8 +225,9 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
                 };
                 b.update = m => {
                     fresh.SetStepSize(m.step / (m.max - m.min));
+                    if (!scope.live) return;
                     fresh.SetValue((m.value - m.min) / (m.max - m.min));
-                    b.refreshValue();
+                    if (scope.live) b.refreshValue();
                 };
             } else if (model.type === "action") {
                 // Build 26266538 W_SettingBaseButton (used by the Action row)
@@ -235,7 +247,9 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
                     const value = m.buttonLabel || m.label, labels = UE.NewArray(UE.BuiltinText);
                     labels.Add(ui.asText(value));
                     fresh.PopulateTextLabels(labels);
+                    if (!scope.live) return;
                     fresh.SetSelectedItem(0);
+                    if (!scope.live) return;
                     styleChoice(fresh, value, state.locale);
                 };
             } else {
@@ -259,14 +273,17 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
                 const update=b.update;
                 b.update=m=>{
                     update(m);
+                    if (!scope.live) return;
                     const channels=colorChannels(m.colorPreview), linear=v=>{v/=255;return v<=0.04045?v/12.92:Math.pow((v+0.055)/1.055,2.4);};
                     swatch.SetColorAndOpacity(new UE.LinearColor(...channels.slice(0,3).map(linear),(channels[3]??255)/255));
                 };
             }
             b.refresh = m => {
+                if (!scope.live) return;
                 b.applying = true;
                 try {
                     ui.text(row.Text_SettingName, m.label);
+                    if (!scope.live) return;
                     if ((m.type === "header" || m.section) && row.Text_SettingName) {
                         // Runtime-created native headings retain their default
                         // justification unless explicitly aligned with setting names.
@@ -274,20 +291,26 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
                         const nameSlot = row.Text_SettingName.Slot;
                         if (nameSlot && typeof nameSlot.SetHorizontalAlignment === "function") nameSlot.SetHorizontalAlignment(UE.EHorizontalAlignment.HAlign_Fill);
                     }
+                    if (!scope.live) return;
                     b.update(m);
+                    if (!scope.live) return;
                     // Leave the row focusable so the disabled reason remains discoverable.
-                    for (const control of b.controls) control.SetIsEnabled(m.enabled !== false);
+                    for (const control of b.controls) {
+                        if (!scope.live) return;
+                        control.SetIsEnabled(m.enabled !== false);
+                    }
                 } finally { b.applying = false; }
             };
             b.refresh(model);
-            state.rowReady(b);
+            if (scope.live) state.rowReady(b);
         } catch (e) {
-            release(host); scope.dispose();
-            if (ui.valid(row)) row.RemoveFromParent();
-            report({ code: "ROW_CREATE_FAILED", id: model.id, detail: String(e) });
-            // A bad provider row must not remove the whole settings page.
-            ui.text(host.Text_SettingName, model.label + " — " + state.word("unavailable"));
-            if (host.Text_SettingName) host.Text_SettingName.SetVisibility(ui.V.SelfHitTestInvisible);
+            const bound = bindings.has(host);
+            state.fail(e, "ROW_CREATE_FAILED");
+            // A failed native host is not a safe place to render a fallback.
+            // A row created before registration still owns its partial widget.
+            for (const cleanup of [() => release(host), () => scope.dispose(), () => {
+                if (!bound && ui.valid(row)) row.RemoveFromParent();
+            }]) try { cleanup(); } catch (_) { report({ code: "ROW_ROLLBACK_FAILED" }); }
         }
     }
     class RowHost {
@@ -296,27 +319,41 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
         BP_OnItemSelectionChanged(selected) {
             const b = bindings.get(this);
             if (!b) return;
-            b.row.SetSelected(selected);
-            b.refreshValue?.(selected);
-            if (selected) b.state.select(b.id, false);
+            try {
+                b.row.SetSelected(selected);
+                b.refreshValue?.(selected);
+                if (selected) b.state.select(b.id, false);
+            } catch (error) { b.state.fail(error); }
         }
-        OnMouseEnter() { const b = bindings.get(this); if (b?.state.acceptsInput()) b.state.select(b.id, false); }
+        OnMouseEnter() {
+            const b = bindings.get(this);
+            try { if (b?.state.acceptsInput()) b.state.select(b.id, false); } catch (error) { b.state.fail(error); }
+        }
         OnMouseButtonDown(geometry, event) {
             const b = bindings.get(this);
-            const model = b?.state.models.get(b.item);
-            if (b?.scope.live && !b.applying && b.state.acceptsInput() && model?.type === "action" && model.enabled !== false &&
-                (!b.state.editors.capturing || ["cancel", "clear"].includes(model.editorAction)) &&
-                typeof UE.KismetInputLibrary.PointerEvent_GetEffectingButton === "function" &&
-                String(UE.KismetInputLibrary.PointerEvent_GetEffectingButton(event).KeyName) === "LeftMouseButton") {
-                b.state.action(b.id); return UE.WidgetBlueprintLibrary.Handled();
-            }
+            try {
+                const model = b?.state.models.get(b.item);
+                if (b?.scope.live && !b.applying && b.state.acceptsInput() && model?.type === "action" && model.enabled !== false &&
+                    (!b.state.editors.capturing || ["cancel", "clear"].includes(model.editorAction)) &&
+                    typeof UE.KismetInputLibrary.PointerEvent_GetEffectingButton === "function" &&
+                    String(UE.KismetInputLibrary.PointerEvent_GetEffectingButton(event).KeyName) === "LeftMouseButton") {
+                    b.state.action(b.id); return UE.WidgetBlueprintLibrary.Handled();
+                }
+            } catch (error) { b?.state.fail(error); }
             return UE.WidgetBlueprintLibrary.Unhandled();
         }
-        OnAddedToFocusPath() { const b = bindings.get(this); if (b?.state.acceptsInput()) b.state.select(b.id, false); }
+        OnAddedToFocusPath() {
+            const b = bindings.get(this);
+            try { if (b?.state.acceptsInput()) b.state.select(b.id, false); } catch (error) { b.state.fail(error); }
+        }
         OnPreviewKeyDown(geometry, event) { return key(this, event); }
         OnKeyUp(geometry,event) {
-            const b=bindings.get(this),name=String(UE.KismetInputLibrary.GetKey(event).KeyName);
-            return b?.state.acceptsInput() && b.state.keyUp(name) ? UE.WidgetBlueprintLibrary.Handled() : UE.WidgetBlueprintLibrary.Unhandled();
+            const b=bindings.get(this);
+            if(!b?.state.acceptsInput())return UE.WidgetBlueprintLibrary.Unhandled();
+            try {
+                const name=String(UE.KismetInputLibrary.GetKey(event).KeyName);
+                return b.state.keyUp(name) ? UE.WidgetBlueprintLibrary.Handled() : UE.WidgetBlueprintLibrary.Unhandled();
+            } catch(error){b.state.fail(error);return UE.WidgetBlueprintLibrary.Unhandled();}
         }
         OnPreviewMouseButtonDown(geometry,event) {
             const b=bindings.get(this);
@@ -326,15 +363,17 @@ function createRows(UE, puerts, ui, tokenOwners, report) {
             try {
                 const name=String(UE.KismetInputLibrary.PointerEvent_GetEffectingButton(event).KeyName);
                 b.state.editors.key(name,false,heldModifiers(UE,this));b.state.refresh();
-            } catch(e) {report({code:"KEY_CAPTURE_FAILED",detail:String(e)});b.state.editors.cancel();}
+            } catch(e) {b.state.fail(e,"KEY_CAPTURE_FAILED");return UE.WidgetBlueprintLibrary.Unhandled();}
             return UE.WidgetBlueprintLibrary.Handled();
         }
         OnAnalogValueChanged(geometry, event) {
             const b = bindings.get(this);
             if (!b?.state.acceptsInput()) return UE.WidgetBlueprintLibrary.Unhandled();
-            const name = String(UE.KismetInputLibrary.GetKey(event).KeyName);
-            const value = UE.KismetInputLibrary.GetAnalogValue(event);
-            return b.state.analog(b.state.selected || b.id, name, value) ? UE.WidgetBlueprintLibrary.Handled() : UE.WidgetBlueprintLibrary.Unhandled();
+            try {
+                const name = String(UE.KismetInputLibrary.GetKey(event).KeyName);
+                const value = UE.KismetInputLibrary.GetAnalogValue(event);
+                return b.state.analog(b.state.selected || b.id, name, value) ? UE.WidgetBlueprintLibrary.Handled() : UE.WidgetBlueprintLibrary.Unhandled();
+            } catch(error){b.state.fail(error);return UE.WidgetBlueprintLibrary.Unhandled();}
         }
         GetPrimaryGamepadFocusWidget() { return bindings.get(this)?.control || this; }
     }

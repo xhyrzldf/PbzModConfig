@@ -1,5 +1,5 @@
 "use strict";
-const { createSupport } = require("./NativeSupport");
+const { createSupport, isDestroyedObjectError } = require("./NativeSupport");
 const { createRows } = require("./NativeRows");
 const { createFooter } = require("./NativeFooter");
 const { createIconLoader } = require("./NativeIcon");
@@ -10,18 +10,30 @@ const { resolve, gameLanguage } = require("../src/Localization");
 const { words: WORDS } = require("../src/LocaleStrings");
 const TAB = "PbzModConfig";
 function createMenu(UE, puerts, framework, report, options={}) {
-    const ui = createSupport(UE, report), states = new Map(), tokenOwners = new Map();
+    const ui = createSupport(UE, report), states = new Map(), tokenOwners = new Map(), failedPanels = new WeakSet();
     const expanded = new Map(), loadIcon = createIconLoader(UE, ui, report);
     let rowFactory;
     function create(panel) {
+        if (failedPanels.has(panel)) throw new Error("MENU_PANEL_RETIRED");
         if (states.has(panel)) return states.get(panel);
         if (!rowFactory) rowFactory = createRows(UE, puerts, ui, tokenOwners, report);
         const state = {
             navigation:createNavigation({now:options.now}),
-            panel, scope: ui.lifetime(), hostScope: null, disposed: false, active: false, covered: false,
+            panel, scope: ui.lifetime(error => state.fail(error)), hostScope: null, disposed: false, failed: false, active: false, covered: false,
             confirming: false, entries: new Map(), models: new Map(), byId: new Map(), owners: new Map(),
             selected: null, pendingFocus: null, entriesGenerated: false, refreshTimer: null, locale: "zhHans",
             word: name => resolve(WORDS[name], state.locale),
+            fail(error, code = "MENU_FAILED") {
+                if (state.failed) return;
+                state.failed = true; failedPanels.add(panel);
+                let detail;
+                try {
+                    const value = typeof error === "string" ? error : error?.message;
+                    if (typeof value === "string") detail = value.slice(0, 160);
+                } catch (_) {}
+                report({ code, detail });
+                try { state.dispose(); } catch (_) { report({ code: "MENU_RETIRE_FAILED" }); }
+            },
             acceptsInput: () => !state.disposed && state.active && !state.covered && !state.confirming,
             flush: () => framework.flushAll(),
             queueRefresh() {
@@ -32,6 +44,7 @@ function createMenu(UE, puerts, framework, report, options={}) {
                 }, 0);
             },
             refresh() {
+                if (state.disposed) return;
                 state.locale = gameLanguage(UE, state.locale);
                 framework.setLanguage(state.locale);
                 const pages = framework.pages(), rows = [];
@@ -73,17 +86,21 @@ function createMenu(UE, puerts, framework, report, options={}) {
                     state.signature = signature; state.owners = owners;
                     state.pendingFocus = state.selected && state.byId.has(state.selected) ? state.selected : rows.find(r => r.type !== "header")?.id;
                     state.list.BP_SetListItems(items);
+                    if (state.disposed) return;
                     state.list.RequestRefresh();
                 } else {
                     for (const row of rows) {
                         const token = state.byId.get(row.id); state.models.set(token, row);
                         const entry = state.entries.get(row.id);
-                        if (entry) try { entry.refresh(row); } catch (e) { report({ code: "ROW_UPDATE_FAILED", id: row.id, detail: String(e) }); }
+                        if (entry) try { entry.refresh(row); } catch (e) { state.fail(e, "ROW_UPDATE_FAILED"); throw e; }
+                        if (state.disposed) return;
                     }
                 }
+                if (state.disposed) return;
                 state.styleTab(); state.details();
             },
             styleTab() {
+                if (state.disposed) return;
                 const button = state.tabs.GetTabButtonBaseByID(TAB);
                 if (!button) return;
                 const label = state.word("tab");
@@ -132,6 +149,7 @@ function createMenu(UE, puerts, framework, report, options={}) {
                 }
             },
             details() {
+                if (state.disposed) return;
                 const m = state.models.get(state.byId.get(state.selected));
                 const view = state.detailView;
                 if (!view) return;
@@ -154,11 +172,16 @@ function createMenu(UE, puerts, framework, report, options={}) {
                 if (state.selected !== id) {
                     const old = state.entries.get(state.selected);
                     if (old && ui.valid(old.row)) {old.row.SetSelected(false);old.refreshValue?.(false);}
+                    if (state.disposed) return;
                     state.selected = id; state.list.BP_SetSelectedItem(token);
+                    if (state.disposed) return;
                 }
                 const entry = state.entries.get(id);
                 if (entry) {entry.row.SetSelected(true);entry.refreshValue?.(true);}
-                state.details(); panel.IsEnterSecond = true;
+                if (state.disposed) return;
+                state.details();
+                if (state.disposed) return;
+                panel.IsEnterSecond = true;
                 if (focus) { state.pendingFocus = id; state.list.BP_ScrollItemIntoView(token); state.focusReady(); }
             },
             rowReady(entry) {
@@ -170,6 +193,7 @@ function createMenu(UE, puerts, framework, report, options={}) {
                 const id = state.pendingFocus, entry = state.entries.get(id);
                 if (!entry || !ui.valid(entry.host) || state.models.get(entry.item)?.id !== id) return;
                 state.pendingFocus = null; state.select(id, false);
+                if (state.disposed) return;
                 const model = state.models.get(entry.item);
                 (model.enabled !== false && entry.control ? entry.control : entry.host).SetFocus();
             },
@@ -177,6 +201,7 @@ function createMenu(UE, puerts, framework, report, options={}) {
                 const m = state.models.get(state.byId.get(id));
                 if (!state.acceptsInput() || !m || m.enabled === false) return;
                 state.select(id, false);
+                if (state.disposed) return;
                 if (state.editors.edit(m,value)) { state.refresh(); return; }
                 const result = framework.edit(m.page.handle, m.key, value, m.page.revision);
                 if (!result.ok) report({ code: "EDIT_REJECTED", id, error: result.error });
@@ -187,6 +212,7 @@ function createMenu(UE, puerts, framework, report, options={}) {
                 const m=state.models.get(state.byId.get(id));
                 if(!state.acceptsInput()||!m?.inlineSoundPreview||m.enabled===false)return;
                 state.select(id,false);
+                if (state.disposed) return;
                 state.editors.action({...m,parentId:m.id,editorAction:"preview"});state.refresh();
             },
             step(id, delta) {
@@ -208,6 +234,7 @@ function createMenu(UE, puerts, framework, report, options={}) {
                 const m = state.models.get(state.byId.get(id));
                 if (!m || m.enabled === false || !state.acceptsInput()) return;
                 state.select(id, false);
+                if (state.disposed) return;
                 if (state.editors.action(m)) { state.refresh(); return; }
                 if (m.section) {
                     state.editors.close();
@@ -221,7 +248,7 @@ function createMenu(UE, puerts, framework, report, options={}) {
                     const handle = m.page.handle;
                     const action = UE.AsyncAction_ShowConfirmation.ShowConfirmationYesNo(panel, undefined, ui.asText(state.word("confirm")));
                     if (!action) { state.confirming = false; throw new Error("RESET_DIALOG_UNAVAILABLE"); }
-                    const scope = ui.lifetime(); state.scope.own(() => scope.dispose());
+                    const scope = ui.lifetime(error => state.fail(error)); state.scope.own(() => scope.dispose());
                     scope.bind(action.OnResult, result => {
                         scope.dispose(); state.confirming = false;
                         if (state.disposed) return;
@@ -264,7 +291,8 @@ function createMenu(UE, puerts, framework, report, options={}) {
                 return true;
             },
             bindHost() {
-                state.hostScope?.dispose(); state.hostScope = ui.lifetime();
+                if (state.disposed) return;
+                state.hostScope?.dispose(); state.hostScope = ui.lifetime(error => state.fail(error));
                 const host = panel.SettingWidget;
                 state.hostScope.bind(host.OnHostDeactivated, () => state.cover());
                 state.hostScope.bind(host.OnHostReactivated, () => state.resume());
@@ -278,6 +306,9 @@ function createMenu(UE, puerts, framework, report, options={}) {
             show() {
                 if (state.disposed) return;
                 state.active = true; state.refresh();
+                // Native setters may synchronously invoke a delegate which
+                // retires this menu and returns normally through the engine.
+                if (state.disposed) return;
                 panel.WidgetSwitcher_65.SetActiveWidget(state.layout.root);
                 state.layout.detailRoot.SetVisibility(ui.V.SelfHitTestInvisible);
                 if (state.layout.external) {
@@ -292,43 +323,60 @@ function createMenu(UE, puerts, framework, report, options={}) {
                 // Audio stop callbacks can re-enter menu actions. Revoke input
                 // before calling provider-owned cleanup, including during dispose.
                 state.active = false;
-                const navigation=state.navigation.flush();if(navigation.accepted)report({code:"NAVIGATION_SUMMARY",...navigation});
-                state.editors.close();
-                state.previewPane?.hide();
-                state.pendingFocus = null; state.flush();
-                if (state.layout) {
-                    state.layout.detailRoot.SetVisibility(ui.V.Collapsed);
-                    if (state.detailsVisibility !== undefined && ui.valid(state.layout.originalDetails)) {
+                try {
+                    const navigation=state.navigation.flush();if(navigation.accepted)report({code:"NAVIGATION_SUMMARY",...navigation});
+                    state.editors.close();
+                    state.previewPane?.hide();
+                    state.pendingFocus = null; state.flush();
+                    if (state.layout) state.layout.detailRoot.SetVisibility(ui.V.Collapsed);
+                } finally {
+                    // This native widget outlives our layout. Restore it even if
+                    // preview cleanup or an already destroyed owned widget fails.
+                    if (state.detailsVisibility !== undefined && ui.valid(state.layout?.originalDetails)) {
                         state.layout.originalDetails.SetVisibility(state.detailsVisibility); state.detailsVisibility = undefined;
                     }
                 }
             },
             dispose() {
                 if (state.disposed) return;
-                state.disposed = true; state.hide();
+                state.disposed = true; state.active = false; state.pendingFocus = null;
+                // Native teardown can already have destroyed any one of these
+                // objects. One failed step must not keep polling or subscriptions.
+                const step = action => {
+                    try { action(); } catch (error) {
+                        if (!isDestroyedObjectError(error)) report({ code: "MENU_DISPOSE_STEP_FAILED", detail: String(error) });
+                    }
+                };
                 if (state.refreshTimer !== null) clearTimeout(state.refreshTimer);
-                state.hostScope?.dispose(); state.scope.dispose(); rowFactory.releaseState(state);
+                state.refreshTimer = null;
+                step(() => state.hide());
+                step(() => state.hostScope?.dispose());
+                step(() => state.scope.dispose());
+                step(() => rowFactory.releaseState(state));
                 for (const token of state.models.keys()) tokenOwners.delete(token);
                 state.models.clear(); state.byId.clear(); state.entries.clear();
-                if (ui.valid(state.tabs)) {
-                    if (state.ownsTab || (state.tabRegistrationStarted && state.tabs.GetTabButtonBaseByID(TAB))) state.tabs.RemoveTab(TAB);
+                step(() => { if (ui.valid(state.tabs)) {
+                    step(() => { if (state.ownsTab || (state.tabRegistrationStarted && state.tabs.GetTabButtonBaseByID(TAB))) state.tabs.RemoveTab(TAB); });
                     for (const name of ["TabButtonIDs", "PreregisteredTabInfoArray"]) {
                         if (!(name === "TabButtonIDs" ? state.ownsNavigation : state.ownsDescriptor)) continue;
-                        const array = state.tabs[name];
-                        if (!array) continue;
-                        for (let i = array.Num() - 1; i >= 0; i--) {
-                            if (String(name === "TabButtonIDs" ? array.Get(i) : array.Get(i).TabId) === TAB) array.RemoveAt(i);
-                        }
+                        step(() => {
+                            const array = state.tabs[name];
+                            if (!array) return;
+                            for (let i = array.Num() - 1; i >= 0; i--) step(() => {
+                                if (String(name === "TabButtonIDs" ? array.Get(i) : array.Get(i).TabId) === TAB) array.RemoveAt(i);
+                            });
+                        });
                     }
-                    state.tabs.ResetTabSwitchTracking();
-                }
-                if (panel.SettingCollections && state.collection) {
+                    step(() => state.tabs.ResetTabSwitchTracking());
+                } });
+                step(() => { if (ui.valid(panel) && panel.SettingCollections && state.collection) {
                     for (let i = panel.SettingCollections.Num() - 1; i >= 0; i--) if (panel.SettingCollections.Get(i) === state.collection) panel.SettingCollections.RemoveAt(i);
-                }
-                if (state.layout) {
+                } });
+                step(() => { if (state.layout && ui.valid(panel)) {
                     if (panel.WidgetSwitcher_65.GetActiveWidget() === state.layout.root) panel.WidgetSwitcher_65.SetActiveWidgetIndex(0);
-                    state.layout.detailRoot.RemoveFromParent(); state.layout.root.RemoveFromParent();
-                }
+                } });
+                step(() => { if (ui.valid(state.layout?.detailRoot)) state.layout.detailRoot.RemoveFromParent(); });
+                step(() => { if (ui.valid(state.layout?.root)) state.layout.root.RemoveFromParent(); });
                 states.delete(panel);
             }
         };
@@ -400,8 +448,9 @@ function createMenu(UE, puerts, framework, report, options={}) {
         }
     }
     function protect(state, callback) {
-        try { return callback(); } catch (e) { report({ code: "MENU_FAILED", detail: String(e) }); }
+        if (state.disposed) return;
+        try { return callback(); } catch (e) { state.fail(e); }
     }
-    return { states, create, get: panel => states.get(panel), protect };
+    return { states, create, get: panel => states.get(panel), isFailed: panel => failedPanels.has(panel), protect };
 }
 module.exports = { createMenu, TAB };

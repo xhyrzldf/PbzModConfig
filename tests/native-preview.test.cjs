@@ -2,12 +2,13 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {createPreviewPane}=require('../native/NativePreview'),{createEditors}=require('../src/Editors'),{setup}=require('./components-fixture.cjs');
 const {publishOptional}=require('../provider/Protocol');
-function fixture(){
+const {createSupport}=require('../native/NativeSupport');
+function fixture(options={}){
     const widgets=[],releases=[],x=setup(),events=[];
     class Vector{constructor(X,Y){Object.assign(this,{X,Y});}}
     class Color{constructor(R,G,B,A){Object.assign(this,{R,G,B,A});}}
     class Widget{
-        constructor(type){this.type=type;this.children=[];this.Font={FontObject:'native-brush-font'};this.OnMouseButtonDownEvent={Bind:fn=>this.click=fn,Unbind:()=>this.click=null};widgets.push(this);}
+        constructor(type){this.type=type;this.children=[];this.Font={FontObject:'native-brush-font'};this.unbinds=0;this.OnMouseButtonDownEvent={Bind:fn=>{this.click=fn;if(type==='Border'&&options.bindError)throw options.bindError;},Unbind:()=>{this.click=null;this.unbinds++;}};widgets.push(this);}
         GetClass(){return this.type;}SetFont(f){this.Font=f;}SetWidthOverride(v){this.width=v;}SetHeightOverride(v){this.height=v;}
         AddChild(w){this.children.push(w);return w.Slot={SetPosition:p=>w.position=p,SetSize:s=>w.size=s};}AddChildToCanvas(w){return this.AddChild(w);}
         SetContent(w){this.content=w;}SetRenderTransformPivot(){}SetRenderScale(v){this.scale=v;}SetVisibility(v){this.visibility=v;}
@@ -16,6 +17,7 @@ function fixture(){
     const state={panel:{},detailView:{Box_DetailsExtension:new Widget('extension'),Text_SettingName:new Widget('native-text')},acceptsInput:()=>true,word:k=>k};
     state.editors=createEditors(x.framework,{word:k=>k,refresh(){}});
     const ui={V:{Visible:1,HitTestInvisible:2,SelfHitTestInvisible:3,Collapsed:0},valid:obj=>!!obj,native:(o,t)=>new Widget(t),text:(w,s)=>w.text=s,lifetime:()=>({own:fn=>releases.push(fn),dispose(){for(const fn of releases.splice(0).reverse())fn();}})};
+    if(options.realLifetimes)ui.lifetime=createSupport({},e=>events.push(e)).lifetime;
     const UE={Vector2D:Vector,LinearColor:Color,Margin:class{},Object:{Load:p=>p},BlueprintPathsLibrary:{ProjectContentDir:()=>'/Content/'},KismetRenderingLibrary:{ImportFileAsTexture2D:(o,p)=>({path:p})},
         SlateBlueprintLibrary:{AbsoluteToLocal:(g,p)=>({X:p.X-g.X,Y:p.Y-g.Y})},KismetInputLibrary:{PointerEvent_GetEffectingButton:e=>({KeyName:e.key}),PointerEvent_GetScreenSpacePosition:e=>e.position},WidgetBlueprintLibrary:{Handled:()=>true,Unhandled:()=>false}};
     const pane=createPreviewPane(UE,ui,state,x.framework,e=>events.push(e)),p=x.page(),model={...p.rows.find(r=>r.key==='tint'),page:p};
@@ -38,6 +40,56 @@ test('无预览扩展的旧提供者不会创建面板，菜单遮盖后不接�
         f.state.acceptsInput=()=>false;const before=f.state.editors.colorDraft;
         assert.equal(wheel.click({X:0,Y:0},{key:'LeftMouseButton',position:{X:180,Y:90}}),false);assert.equal(f.state.editors.colorDraft,before);f.pane.hide();
         assert.equal(f.widgets.find(w=>w.type==='SizeBox').visibility,0);
+    }finally{f.close();}
+});
+
+test('预览面板隐藏抛错后仍解除鼠标委托并移除自有控件',()=>{
+    const f=fixture();
+    f.state.editors.action(f.state.editors.rows(f.model)[0]);f.pane.update(f.model);
+    const wheel=f.widgets.find(w=>w.type==='Border'),box=f.widgets.find(w=>w.type==='SizeBox');
+    assert.equal(typeof wheel.click,'function');
+    box.SetVisibility=()=>{throw Error('access a invalid object');};
+    assert.throws(()=>f.pane.dispose(),/access a invalid object/);
+    assert.equal(wheel.click,null);assert.equal(box.removed,true);
+    assert.doesNotThrow(()=>f.pane.dispose());f.close();
+});
+
+test('调色盘原生事件参数失效会清理预览，迟到点击不再读取失效对象',()=>{
+    const f=fixture();try{
+        f.state.editors.action(f.state.editors.rows(f.model)[0]);f.pane.update(f.model);
+        const wheel=f.widgets.find(w=>w.type==='Border'),click=wheel.click;let failures=0,reads=0;
+        f.state.fail=()=>{failures++;f.pane.dispose();};
+        const event={get key(){reads++;throw Error('access a invalid object');}};
+        assert.equal(click({},event),false);assert.equal(click({},event),false);
+        assert.equal(failures,1);assert.equal(reads,1);assert.equal(wheel.click,null);
+    }finally{f.close();}
+});
+
+test('调色盘部分绑定失败后清理已注册委托，重复清理不遗漏也不重复解绑',()=>{
+    const problem=Error('access a invalid object'),f=fixture({realLifetimes:true,bindError:problem});
+    try{
+        let failures=0;
+        f.state.fail=error=>{assert.equal(error,problem);failures++;f.pane.dispose();};
+        f.state.editors.action(f.state.editors.rows(f.model)[0]);
+        assert.throws(()=>f.pane.update(f.model),e=>e===problem);
+        const wheel=f.widgets.find(w=>w.type==='Border'),box=f.widgets.find(w=>w.type==='SizeBox');
+        assert.equal(failures,1);assert.equal(box.removed,true);
+        assert.equal(wheel.click,null,'a removed native panel must not retain its bound callback');
+        assert.equal(wheel.unbinds,1);f.pane.dispose();assert.equal(wheel.unbinds,1);
+        assert.doesNotThrow(()=>f.pane.update(f.model));assert.equal(failures,1);
+    }finally{f.close();}
+});
+
+test('预览原生控件失效只处理一次，后续更新不再触碰已清理的控件',()=>{
+    const f=fixture();try{
+        f.state.editors.action(f.state.editors.rows(f.model)[0]);f.pane.update(f.model);
+        const caption=f.widgets.find(w=>w.type==='native-text'&&w.text===''),box=f.widgets.find(w=>w.type==='SizeBox');
+        assert.ok(caption);let failures=0,reads=0;
+        caption.SetVisibility=()=>{reads++;throw Error('access a invalid object');};
+        f.state.fail=()=>{failures++;f.pane.dispose();};
+        assert.throws(()=>f.pane.update(f.model),/access a invalid object/);assert.equal(failures,1);
+        box.SetVisibility=()=>{throw Error('must not touch disposed native pane');};
+        assert.doesNotThrow(()=>f.pane.update(f.model));assert.equal(reads,1);
     }finally{f.close();}
 });
 
