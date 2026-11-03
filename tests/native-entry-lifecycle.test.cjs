@@ -6,7 +6,7 @@ const {fixture}=require("./native-input-fixture.cjs");
 
 // Real Entry wrappers and real NativeMenu/Framework; only engine widgets and
 // bootstrap wiring are replaced. No game process, filesystem IO or real timers.
-function entryFixture({nativeSwitchError,realLifetimes=false,realPreview=false}={}) {
+function entryFixture({nativeSwitchError,nativeFocusError,realLifetimes=false,realPreview=false}={}) {
     let id=0;const intervals=new Map(), pending=new Map(), calls=new Map();
     const fixtureOptions={externalDetails:true,realLifetimes,realPreview,timerApi:{
         setInterval(fn){intervals.set(++id,fn);return id;},clearInterval(key){intervals.delete(key);},
@@ -22,6 +22,7 @@ function entryFixture({nativeSwitchError,realLifetimes=false,realPreview=false}=
     for(const name of names) Panel.prototype[name]=function(...args){
         calls.set(name,(calls.get(name)||0)+1);
         if(name==="applyTabSwitch") {if(nativeSwitchError)throw nativeSwitchError;this.CurrentCollection=args[1];}
+        if(name==="SelectWidgetToFocus" && nativeFocusError)throw nativeFocusError;
         return "native:"+name;
     };
     Object.setPrototypeOf(f.panel,Panel.prototype);
@@ -38,6 +39,41 @@ function entryFixture({nativeSwitchError,realLifetimes=false,realPreview=false}=
     const runtime=context.module.exports.install(Panel,{}, {},host,nativeLifecycle,{});
     return {...f,runtime,host,nativeLifecycle,intervals,pending,calls};
 }
+
+test("focus recovery stays on the native tab after leaving the mod list, but reentry still focuses the list",()=>{
+    const f=entryFixture(),saved=f.state.focusReady;let modFocus=0;
+    f.state.focusReady=()=>{modFocus++;};
+    try{
+        f.panel.IsEnterSecond=false;
+        assert.equal(f.panel.SelectWidgetToFocus(),"native:SelectWidgetToFocus");
+        assert.equal(f.calls.get("SelectWidgetToFocus"),1,"native tab focus must be restored by the game");
+        assert.equal(modFocus,0,"restoring tab focus must not re-enter mod rows");
+        f.panel.IsEnterSecond=true;
+        f.panel.SelectWidgetToFocus();
+        assert.equal(modFocus,1,"a player who re-enters the list still gets mod-row focus");
+        assert.equal(f.calls.get("SelectWidgetToFocus"),1);
+    }finally{f.state.focusReady=saved;f.dispose();}
+});
+
+test("focus recovery guards an invalid native page-state read and retires the mod menu",()=>{
+    const f=entryFixture(),saved=Object.getOwnPropertyDescriptor(f.panel,"IsEnterSecond");
+    Object.defineProperty(f.panel,"IsEnterSecond",{configurable:true,get(){throw Error("access a invalid object");}});
+    try{
+        assert.doesNotThrow(()=>f.panel.SelectWidgetToFocus());
+        assert.equal(f.state.disposed,true);assert.equal(f.menu.states.size,0);
+        assert.equal(f.intervals.size,0);assert.equal(f.pending.size,0);
+        assert.equal(f.runtime.diagnostics.snapshot().events.find(e=>e.code==="MENU_FAILED").count,1);
+    }finally{Object.defineProperty(f.panel,"IsEnterSecond",saved);f.dispose();}
+});
+
+test("native focus recovery errors still propagate without retry",()=>{
+    const error=Error("native game focus failure"),f=entryFixture({nativeFocusError:error});
+    try{
+        f.panel.IsEnterSecond=false;
+        assert.throws(()=>f.panel.SelectWidgetToFocus(),thrown=>thrown===error);
+        assert.equal(f.calls.get("SelectWidgetToFocus"),1);
+    }finally{f.dispose();}
+});
 
 test("entry preserves normal native switching, mod reopening and native return values",()=>{
     const f=entryFixture();try{

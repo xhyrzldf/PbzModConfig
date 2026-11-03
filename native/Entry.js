@@ -73,7 +73,14 @@ function install(Panel, UE, puerts, exports, nativeLifecycle, root = globalThis)
     wrap("SelectWidgetToFocus", function (original, args) {
         const state = current(this);
         if (!state) return original.apply(this, args);
-        protect(this, state, () => { quiesce(this); state.pendingFocus = state.selected || state.pendingFocus; state.focusReady(); });
+        let nativeTab = false;
+        protect(this, state, () => {
+            // The current collection remains the mod tab after keyboard Back
+            // moves focus to the native tab bar. Let the game restore that bar.
+            if (this.IsEnterSecond === false) { nativeTab = true; return; }
+            quiesce(this); state.pendingFocus = state.selected || state.pendingFocus; state.focusReady();
+        });
+        if (nativeTab) return original.apply(this, args);
     });
     for (const name of ["ClickCollection", "selectCollection"]) wrap(name, function (original, args) {
         const state = current(this);

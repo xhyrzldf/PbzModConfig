@@ -1,3 +1,9 @@
+## 0.3.11
+
+Fix focus sometimes returning to the mod settings list after backing out to the native tabs.
+
+Automated checks are recorded during preparation. In-game coverage remains limited to the release acceptance evidence.
+
 ## 0.3.10
 
 The complete code review passed and all 192 JavaScript checks passed. On Steam build 26266538, opening and closing the menu, loading a save from settings, returning to the title screen, continuing, and reopening the menu were tested successfully. The release payload differs from the tested candidate only in its version string. Automated checks and an offline build are repeated for this public source export.

@@ -1,5 +1,10 @@
 # 更新记录
 
+## 0.3.11
+
+Fix focus sometimes returning to the mod settings list after backing out to the native tabs.
+
+
 ## 0.3.10
 
 完善故障信息记录与反馈收集，优化模组菜单运行稳定性。
