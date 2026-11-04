@@ -14,12 +14,6 @@ ORIGINAL = "ProjectPBZ/Content/JavaScript/UI/Setting/SettingPanel.js"
 SOURCE_SHA256 = "51aeade8f90f7b3a2ba0e6c4192db9079fc3f9e0628753be07cffa8726eb2cea"
 ANCHOR = "exports.SettingPanelMixinInterface = SettingPanelMixinInterface;"
 PATCH = '\ntry { require("../../PbzModConfig/native/Entry").install(SettingPanelMixinInterface, UE, puerts_1, exports, {clearPendingSelect, cancelSelectWidgetFocusTimer}); } catch (error) { console.warn("[PbzModConfig] BOOT_FAILED " + String(error)); }\n'
-FILES = (
-    "provider/Protocol.js", "provider/Schema.js", "provider/Controls.js", "provider/Compatibility.js", "provider/ConfigStore.js", "provider/Translations.js",
-    "provider/Journal.js", "provider/EasyCsvIO.js", "provider/StorageRoot.js", "src/Framework.js", "src/Editors.js", "src/Localization.js", "src/LocaleStrings.js", "src/Metadata.js",
-    "native/NativeSupport.js", "native/NativeRows.js", "native/NativeMenu.js", "native/Entry.js", "native/Diagnostics.js", "native/NativeFooter.js", "native/NativeIcon.js", "native/NativePreview.js", "native/NativePreviewAudio.js", "src/ColorPalette.js", "src/Navigation.js",
-)
-ASSETS = ("assets/modconfig-icon.png", "assets/color-wheel.png")
 
 
 def sha(data: bytes) -> str:
@@ -45,19 +39,91 @@ def validate_output(out: Path, game_root: Path | None) -> None:
         raise ValueError("必须指定独立子目录")
 
 
+FILES = (
+    "provider/Protocol.js", "provider/Schema.js", "provider/Controls.js", "provider/Compatibility.js", "provider/ConfigStore.js", "provider/Translations.js",
+    "provider/Journal.js", "provider/EasyCsvIO.js", "provider/StorageRoot.js", "src/Framework.js", "src/Editors.js", "src/Localization.js", "src/LocaleStrings.js", "src/Metadata.js",
+    "native/NativeSupport.js", "native/NativeRows.js", "native/NativeMenu.js", "native/Entry.js", "native/Diagnostics.js", "native/NativeFooter.js", "native/NativeIcon.js", "native/NativePreview.js", "native/NativePreviewAudio.js", "src/ColorPalette.js", "src/Navigation.js",
+)
+
+ASSETS = ("assets/modconfig-icon.png", "assets/color-wheel.png")
+
+LOADER_FILES = ("main.js", "LoaderAdapter.js", "NativeSelectionLifecycle.js")
+
+LOADER_ROOT = "ProjectPBZ/PBZModLoader/mods/pbz-mod-config/"
+
+LOADER_VERSION = "0.3.6-preview"
+
+TARGET_BUILD = "26367565"
+
+def embedded_locales() -> str:
+    """Flatten shared authored catalogs: the installed framework stays standalone."""
+    data = json.loads(subprocess.check_output([
+        "node", "-e", "const x=require(process.argv[1]);process.stdout.write(JSON.stringify({catalogs:x.catalogs,signatures:x.signatures,regionalSignatures:x.regionalSignatures}));",
+        str(HERE / "src/LocaleStrings.js")], encoding="utf-8"))
+    expected = set(data["catalogs"]["en"])
+    for locale, values in data["catalogs"].items():
+        if set(values) != expected or any(not isinstance(v, str) or not v.strip() for v in values.values()):
+            raise ValueError("配置菜单本地化键缺失或空文本：" + locale)
+    return ('"use strict";\nconst {createTranslations}=require("../provider/Translations");\n'
+            'const data=' + json.dumps(data, ensure_ascii=False, separators=(",", ":")) + ';\n'
+            'module.exports={...data,words:createTranslations(data.catalogs)};\n')
+
+def stage_pbzmodloader(out: Path) -> dict:
+    """Stage only authored modules. Loader installation is a separate operation."""
+    stage = out.resolve() / "stage"
+    if stage.exists():
+        raise ValueError("目标 stage 已存在；使用新目录，避免混入旧产物")
+    # The three sources live together under loader/ and become siblings of
+    # native/ in the installed mod, matching their frozen relative imports.
+    contents = {LOADER_ROOT + name: (HERE / "loader" / name).read_bytes() for name in LOADER_FILES}
+    for name in FILES:
+        contents[LOADER_ROOT + name] = (embedded_locales().encode("utf-8") if name == "src/LocaleStrings.js"
+                                      else (HERE / name).read_bytes())
+    for name in ASSETS:
+        contents["ProjectPBZ/Content/JavaScript/PbzModConfig/" + name] = (HERE / name).read_bytes()
+    stage.mkdir(parents=True)
+    files = []
+    for name, data in contents.items():
+        target = stage / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        if target.suffix == ".js":
+            subprocess.run(["node", "--check", str(target)], check=True)
+        files.append({"path": name, "bytes": len(data), "sha256": sha(data)})
+    version = subprocess.check_output([
+        "node", "-p", "require(process.argv[1]).version", str(HERE / "src/Metadata.js")
+    ], text=True).strip()
+    manifest = {
+        "version": version, "build": TARGET_BUILD, "runtime": "pbzmodloader",
+        "requires": {"runtime.PBZModLoader": LOADER_VERSION},
+        "entry": LOADER_ROOT + "main.js", "kind": "native-menu-loader",
+        "demoIncluded": False, "nativeMenuImplemented": True, "gameTested": False,
+        "overrides": [], "added": sorted(contents), "files": files,
+    }
+    (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return manifest
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-root", type=Path, required=True,
+    parser.add_argument("--source-root", type=Path,
                         help="原版脚本导出根目录，包含 ProjectPBZ/Content/JavaScript")
     parser.add_argument("--game-root", type=Path, help="游戏安装目录，用于拒绝向游戏目录输出")
     parser.add_argument("--repak", type=Path, help="repak 可执行文件；完整构建必填")
     parser.add_argument("--retoc", type=Path, help="retoc 可执行文件；完整构建必填")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--stage-only", action="store_true")
+    parser.add_argument("--runtime", choices=("pak", "pbzmodloader"), default="pak")
     args = parser.parse_args()
     validate_output(args.out, args.game_root)
     if args.out.exists():
         raise ValueError("输出目录已存在；使用新目录，避免覆盖或混入旧产物")
+    if args.runtime == "pbzmodloader":
+        stage_pbzmodloader(args.out)
+        print(json.dumps({"status":"staged", "runtime":"pbzmodloader",
+                          "manifest":str((args.out / "manifest.json").resolve()), "gameTested":False}))
+        return
+    if args.source_root is None:
+        parser.error("--source-root is required for the pak runtime")
     if not args.stage_only:
         for name, tool in (("repak", args.repak), ("retoc", args.retoc)):
             if tool is None or not tool.is_file():

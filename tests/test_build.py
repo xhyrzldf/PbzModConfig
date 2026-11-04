@@ -1,3 +1,4 @@
+from unittest import mock
 import importlib.util
 import json
 from pathlib import Path
@@ -66,6 +67,63 @@ class BuildTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(marker.read_text(encoding="utf-8"), "keep")
             self.assertEqual(sorted(p.name for p in Path(directory).iterdir()), ["keep.txt"])
+
+
+class LoaderBuildTests(unittest.TestCase):
+    def setUp(self):
+        root = BUILD.REPO / ".local/pbz-modconfig"
+        root.mkdir(parents=True, exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(prefix="loader-build-test-", dir=root)
+        self.addCleanup(temporary.cleanup)
+        self.out = Path(temporary.name) / "output"
+
+    def test_loader_stage_has_only_authored_files_and_true_hashes(self):
+        manifest = BUILD.stage_pbzmodloader(self.out)
+        self.assertEqual(manifest["runtime"], "pbzmodloader")
+        self.assertEqual(manifest["requires"], {"runtime.PBZModLoader": "0.3.6-preview"})
+        self.assertEqual(manifest["build"], "26367565")
+        self.assertEqual(manifest["entry"], BUILD.LOADER_ROOT + "main.js")
+        self.assertEqual(manifest["overrides"], [])
+        expected = {BUILD.LOADER_ROOT + name for name in BUILD.FILES + BUILD.LOADER_FILES}
+        expected.update("ProjectPBZ/Content/JavaScript/PbzModConfig/" + name for name in BUILD.ASSETS)
+        actual = {row["path"] for row in manifest["files"]}
+        self.assertEqual(actual, expected)
+        self.assertEqual(set(manifest["added"]), expected)
+        self.assertNotIn(BUILD.ORIGINAL, actual)
+        self.assertNotIn("source", manifest)
+        self.assertNotIn("artifacts", manifest)
+        for row in manifest["files"]:
+            data = (self.out / "stage" / row["path"]).read_bytes()
+            self.assertEqual(row["bytes"], len(data))
+            self.assertEqual(row["sha256"], BUILD.sha(data))
+        for name in BUILD.LOADER_FILES:
+            self.assertEqual((self.out / "stage" / BUILD.LOADER_ROOT / name).read_bytes(),
+                             (HERE / "loader" / name).read_bytes())
+
+    def test_loader_cli_does_not_read_an_original_or_invoke_the_pak_builder(self):
+        result = subprocess.run([
+            "python", str(HERE / "build.py"), "--runtime", "pbzmodloader",
+            "--out", str(self.out), "--source-root", str(self.out / "missing-original")
+        ], text=True, encoding="utf-8", capture_output=True, check=True)
+        status = json.loads(result.stdout)
+        self.assertEqual(status["status"], "staged")
+        self.assertEqual(status["runtime"], "pbzmodloader")
+        self.assertEqual({path.name for path in self.out.iterdir()}, {"stage", "manifest.json"})
+        self.assertFalse(any(path.suffix in {".pak", ".utoc", ".ucas"} for path in self.out.rglob("*")))
+
+    def test_existing_stage_is_rejected_without_merging_files(self):
+        marker = self.out / "stage/untouched.txt"
+        marker.parent.mkdir(parents=True)
+        marker.write_text("keep", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "stage"):
+            BUILD.stage_pbzmodloader(self.out)
+        self.assertEqual(list(marker.parent.iterdir()), [marker])
+
+    def test_missing_source_does_not_leave_a_partial_stage(self):
+        with mock.patch.object(BUILD, "LOADER_FILES", ("missing-module.js",)):
+            with self.assertRaises(FileNotFoundError):
+                BUILD.stage_pbzmodloader(self.out)
+        self.assertFalse((self.out / "stage").exists())
 
 
 if __name__ == "__main__":

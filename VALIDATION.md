@@ -1,3 +1,9 @@
+## 0.3.13
+
+适配游戏构建26367565，新增PBZModLoader独立脚本入口并保留原生设置页交互。
+
+Automated checks are recorded during preparation. In-game coverage remains limited to the release acceptance evidence.
+
 ## 0.3.11
 
 Fix focus sometimes returning to the mod settings list after backing out to the native tabs.

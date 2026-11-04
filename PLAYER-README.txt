@@ -1,17 +1,23 @@
-模组配置菜单 0.3.11
-完善故障信息记录与反馈收集，优化模组菜单运行稳定性。
-修复音色左右箭头的点击区域，试听使用原生小喇叭并在播放时高亮。试听期间音乐与环境音临时降至原音量20%，结束后恢复当前偏好，不保存临时音量。保留协议1、选项预览、手柄导航及已有设置；暂停菜单试听和图标观感待游戏内确认。
-作者：皮一下就很凡@Bilibili
-适用：影之刃零 Steam 构建 26266538
+模组配置菜单 0.3.13
+作者 皮一下就很凡@Bilibili
 
-退出游戏后，将完整签名 ZIP 导入“影之刃零 模组安装器”。
-手动安装时，将 zzz_PBZModConfig_P.pak、.utoc、.ucas 三件套一并放入
-游戏的 ProjectPBZ/Content/Paks/~mods/ 目录。
+适用 Steam 构建 26367565。
+需要共享前置 PBZModLoader 0.3.6-preview。
+前置下载与安装说明 https://www.nexusmods.com/phantombladezero/mods/113
 
-启动游戏，打开“设置 → 模组”。只有已接入的模组会显示配置项。
-升级前备份并移走手动安装的本框架旧三件套，不要改动其他模组。
-卸载时仅移除本框架三件套，配置和业务模组会保留。
+安装
+1. 退出游戏，备份自己的模组配置。
+2. 按作者说明安装 PBZModLoader，选择一份加载器入口。多个兼容模组共用这份前置。
+3. 将旧版 zzz_PBZModConfig_P.pak、.utoc、.ucas 移出 ProjectPBZ/Content/Paks/~mods。
+4. 将本包的 ProjectPBZ 文件夹合并到游戏根目录。游戏根目录包含 ProjectPBZ 和 platform。
+5. 启动游戏，在设置的“模组”页调整已安装模组。
 
-新增按键、颜色与音效组件已通过离线检查；完整手柄操作、跨游戏进程恢复和异常读写仍待游戏内验证。
-其他覆盖 SettingPanel.js 的模组可能冲突。
-不需要 UE4SS、Node.js 或 Python 作为游戏运行依赖。
+配置会继续使用现有保存位置。安装本包时无需删除旧配置。
+本包包含模组自身的脚本与图片，前置由其作者单独提供。
+
+卸载
+退出游戏，删除 ProjectPBZ/PBZModLoader/mods/pbz-mod-config。
+本模组的图片位于 ProjectPBZ/Content/JavaScript/PbzModConfig/assets，可一并移走。
+其他模组仍依赖 PBZModLoader 时，请保留共享前置。
+
+本版本已在作者本机完成菜单与保存验证，其他加载器共存尚待测试。

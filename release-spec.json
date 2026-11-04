@@ -3,7 +3,7 @@
   "name": { "zh-Hans": "模组配置菜单", "en": "Mod Config Menu" },
   "authors": ["皮一下就很凡@Bilibili"],
   "summary": { "zh-Hans": "在游戏设置中统一管理模组配置", "en": "Manage mod settings from the game's Settings menu." },
-  "gameBuilds": ["26266538"],
+  "gameBuilds": ["26367565"],
   "containers": ["zzz_PBZModConfig_P"],
   "dependencies": { "required": [], "optional": [] },
   "conflicts": [],
