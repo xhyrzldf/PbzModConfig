@@ -1,0 +1,18 @@
+{
+  "version": "1.0.0",
+  "game_build": "26367565",
+  "ue4ss": {
+    "nexusMod": 5,
+    "version": "1.0.3",
+    "lua": "Lua 5.4.7"
+  },
+  "capabilities": {
+    "tabIcon": true,
+    "tabSpacing": true,
+    "keyCapture": "session",
+    "keySource": "poll",
+    "confirmReset": true,
+    "resetKey": true,
+    "choiceFont": true
+  }
+}

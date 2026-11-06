@@ -1,3 +1,5 @@
+> 本文件描述 0.3.13 及以前的 JavaScript 版，1.0.0 的 UE4SS 版请看 [README](README.md)。
+
 # PbzModConfig 协议 1.0
 
 协议版本：1.0。主版本槽位 `globalThis.__PBZ_MOD_CONFIG_V1__`。只支持同一 PuerTS 上下文，其他上下文不会自动发现。

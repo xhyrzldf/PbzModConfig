@@ -1,3 +1,5 @@
+> 本文件描述 0.3.13 及以前的 JavaScript 版，1.0.0 的 UE4SS 版请看 [README](README.md)。
+
 # 运行时边界
 
 目标构建为 Steam `26266538`，UE `5.7.4`。脚本通过游戏现有的 PuerTS 上下文运行。

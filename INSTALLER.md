@@ -1,3 +1,5 @@
+> 本文件描述 0.3.13 及以前的 JavaScript 版，1.0.0 的 UE4SS 版请看 [README](README.md)。
+
 # 安装器适配
 
 普通源码构建输出同名 `.pak/.utoc/.ucas` 三件套，可按 [README](README.md) 手动安装。
