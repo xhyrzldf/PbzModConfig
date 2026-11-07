@@ -2,7 +2,7 @@
 
 在游戏原生设置中增加「模组」页签，为接入的模组提供统一配置界面。
 
-**版本：1.0.0** · **目标游戏构建：Steam 26367565** · **前置：UE4SS #5 1.0.3**
+**版本：1.0.1** · **目标游戏构建：Steam 26367565** · **前置：UE4SS #5 1.0.3**
 
 作者：[皮一下就很凡@Bilibili](https://space.bilibili.com/26786884)
 
@@ -17,12 +17,14 @@
 需要 Python 3 和 Node.js，不需要提取游戏脚本。源码位于 `ue4ss/` 和 `lua/`，图片位于 `assets/`。
 
 ```powershell
-python build_ue4ss.py --out .local/build-1.0.0
+python build_ue4ss.py --out .local/build-1.0.1
 ```
 
 构建只写入仓库 `.local/` 下的新目录，不安装游戏文件。生成的 `release-manifest.json` 记录版本和逐文件哈希。
 
 仓库中 `src/`、`provider/`、`native/` 与 `loader/` 保留旧版 JavaScript 代码，供查阅历史；当前发行版使用 Lua。旧版接口文档保留并注明适用范围。
+
+`package.py` 保留旧版打包实现；当前 UE4SS 版使用上面的独立构建入口。
 
 ## 许可
 

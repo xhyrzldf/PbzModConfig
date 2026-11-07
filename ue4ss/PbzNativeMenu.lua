@@ -46,6 +46,17 @@ function Menu.create(panel, tab, models, onChange, report, handlers)
     local list, details, layout, footer, pageEvents
     local tracker = Selection and Selection.tracker() or nil
     local selectionBroken, pendingFocus = capabilities.selection == false, false
+    -- Our ScrollBox has its own selection. SettingPanel's IsEnterSecond instead
+    -- controls a native Back step (list -> tab bar), which leaves this custom
+    -- page visible. Keep focus intent locally and let the native guarded close
+    -- handle Back directly while the mod page owns the selection.
+    local enteredList = false
+    local function releaseListNavigation()
+        if enteredList then
+            if panel.IsEnterSecond == false then panel.IsEnterSecond = true end
+            enteredList = false
+        end
+    end
     report = report or function(code, detail)
         print("[PbzModConfig] " .. code .. " " .. tostring(detail) .. "\n")
     end
@@ -65,6 +76,12 @@ function Menu.create(panel, tab, models, onChange, report, handlers)
             if widget and not Widgets.valid(widget) then whole = false end
         end
         if not whole then return state.abandon() end
+        -- Runtime.stop first selects a native tab. Hand its navigation back,
+        -- but do not restore a second-level flag when the whole menu closes.
+        local tabs = panel.W_OverlayTabList_C
+        if Widgets.valid(tabs) and tabs:GetSelectedTabId():ToString() ~= tab.id:ToString() then
+            releaseListNavigation()
+        end
         local clean = true
         if pageEvents then
             local ok, cleared = pcall(pageEvents.dispose)
@@ -176,7 +193,7 @@ function Menu.create(panel, tab, models, onChange, report, handlers)
         end
     end
 
-    -- Programmatic or polled selection: native row highlight, details, IsEnterSecond (JS select()).
+    -- Programmatic or polled selection: native row highlight and details.
     function state.select(id, via, focus)
         if not state.valid() then return false end
         local index = id and state.byId[id]
@@ -191,8 +208,10 @@ function Menu.create(panel, tab, models, onChange, report, handlers)
             state.rows[index].setSelected(true)
         end
         state.lastVia = via
-        -- The native page uses this flag to know the player entered the second level.
-        pcall(function() panel.IsEnterSecond = true end)
+        if state.active and not state.covered then
+            enteredList = true
+            panel.IsEnterSecond = false
+        end
         renderDetails()
         if focus then state.focus(id) end
         return true
@@ -212,6 +231,7 @@ function Menu.create(panel, tab, models, onChange, report, handlers)
     -- A world change took the panel: stop every loop and keep nothing, without touching a widget.
     function state.abandon()
         state.disposed, state.failed = true, true
+        enteredList = false
         -- Event routes are revoked in Lua so a late delegate of the old page reaches nothing.
         for _, list in ipairs({state.rows, release.rows or {}}) do
             for _, entry in ipairs(list) do
@@ -344,8 +364,8 @@ function Menu.create(panel, tab, models, onChange, report, handlers)
 
     local function focusOnEntry()
         if not pendingFocus or state.covered then return end
-        local entered = false
-        pcall(function() entered = panel.IsEnterSecond == true end)
+        local entered = enteredList
+        pcall(function() entered = entered or panel.IsEnterSecond == true end)
         -- J08: while the player is still on the tab row, leave focus there.
         if not entered then return end
         pendingFocus = false
@@ -381,6 +401,7 @@ function Menu.create(panel, tab, models, onChange, report, handlers)
                 renderDetails()
             end
         elseif state.active then
+            releaseListNavigation()
             if layout.external and Widgets.valid(layout.originalDetails) then
                 layout.originalDetails:SetVisibility(state.originalDetailsVisibility)
                 state.originalDetailsVisibility = nil

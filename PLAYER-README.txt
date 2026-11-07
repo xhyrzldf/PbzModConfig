@@ -1,5 +1,7 @@
-模组配置菜单 1.0.0
+模组配置菜单 1.0.1
 作者 皮一下就很凡@Bilibili
+
+修复模组配置页需要按两次 ESC 才能退出的问题；保留快捷键录制、弹窗取消和未保存画质设置的确认流程。
 
 适用《影之刃零》Steam 构建 26367565，需要 UE4SS #5 1.0.3。
 获取前置：https://www.nexusmods.com/phantombladezero/mods/5
