@@ -281,7 +281,7 @@ function Runtime.start(providers, options)
     local previous = rawget(_G, SLOT)
     assert(not previous or (previous.tag == TAG and type(previous.stop) == "function"), "RUNTIME_SLOT_ALREADY_OWNED")
     if previous then assert(previous.stop() ~= false, "PREVIOUS_RUNTIME_STOP_FAILED") end
-    local runtime = {tag = TAG, stopped = false, closed = false, panels = {}, failed = {}}
+    local runtime = {tag = TAG, stopped = false, closed = false, panels = {}, failed = {}, attachRetries = {}}
     rawset(_G, SLOT, runtime)
     local report = options.report or function(code, detail)
         print("[PbzModConfig] " .. code .. " " .. tostring(detail) .. "\n")
@@ -289,6 +289,14 @@ function Runtime.start(providers, options)
     local function log(code, detail)
         local ok, err = pcall(report, code, detail)
         if not ok then print("[PbzModConfig] REPORT_FAILED " .. tostring(err) .. "\n") end
+    end
+    local function refreshTab(state)
+        local ok, ready, reason = pcall(state.tab.refresh)
+        if not ok then
+            log("TAB_REFRESH_FAILED", ready)
+            return false, "TAB_REFRESH_FAILED"
+        end
+        return ready, reason
     end
 
     -- Capabilities that depend on native behaviour not yet confirmed in the game.
@@ -450,20 +458,14 @@ function Runtime.start(providers, options)
             end
         end
         if state.tab then
-            if valid(state.panel) and valid(state.panel.W_OverlayTabList_C) then
-                local current = state.panel.W_OverlayTabList_C:GetTabButtonBaseByID(state.tab.id)
-                if valid(current) and valid(state.tab.button) and current:GetAddress() == state.tab.button:GetAddress() then
-                    local ok, err = pcall(state.tab.detach)
-                    if ok then state.tab = nil
-                    else
-                        clean = false
-                        log("TAB_DETACH_FAILED", err)
-                    end
-                else
-                    log("TAB_OWNERSHIP_CHANGED", state.address)
-                    state.tab = nil
-                end
-            else state.tab = nil end
+            -- The tab scope verifies the panel/list and collection ownership.
+            -- A native rebuild can replace the button without replacing our page.
+            local ok, err = pcall(state.tab.detach)
+            if ok then state.tab = nil
+            else
+                clean = false
+                log("TAB_DETACH_FAILED", err)
+            end
         end
         return clean
     end
@@ -735,8 +737,12 @@ function Runtime.start(providers, options)
         return clean
     end
     local function pageAlive(state)
-        if runtime.stopped or state.faulted or state.retired then return false end
-        local alive = valid(state.panel) and (state.tab == nil or valid(state.tab.button))
+        if runtime.stopped or runtime.suspended or state.faulted or state.retired then return false end
+        local alive = valid(state.panel)
+        -- Key-source demand callbacks are predicates, not native reconciliation
+        -- points. The game-thread poll repairs/rebinds a rebuilding tab; until
+        -- then a dead cached button pauses input without retiring the page.
+        if alive and state.tab and not valid(state.tab.button) then return false end
         if alive and state.menu then
             alive = not state.menu.disposed
             if alive and state.menu.valid then alive = state.menu.valid()
@@ -1435,6 +1441,7 @@ function Runtime.start(providers, options)
             end
         end
         runtime.stopped = true
+        runtime.attachRetries = {}
         local clean = true
         for index = #runtime.unsubscribers, 1, -1 do
             local item = runtime.unsubscribers[index]
@@ -1493,6 +1500,7 @@ function Runtime.start(providers, options)
         if runtime.stopped then return end
         if reason == "load-map-pre" then
             runtime.suspended, runtime.resumeAt = true, nil
+            runtime.attachRetries = {}
             pauseEvents(true)
             runtime.worldChanges = (runtime.worldChanges or 0) + 1
             if keySource and type(keySource.discardWorld) == "function" then pcall(keySource.discardWorld) end
@@ -1565,17 +1573,24 @@ function Runtime.start(providers, options)
                     if state.retired or state.faulted or not live[address] then retire(address, state) end
                 end
                 for address in pairs(runtime.failed) do if not live[address] then runtime.failed[address] = nil end end
+                for address in pairs(runtime.attachRetries) do
+                    if not live[address] then runtime.attachRetries[address] = nil end
+                end
                 for address, panel in pairs(live) do
                     local state = runtime.panels[address]
                     if state then
                         if not state.retired and not state.faulted then
-                            local tabList = panel.W_OverlayTabList_C
-                            local button = valid(tabList) and tabList:GetTabButtonBaseByID(state.tab.id) or nil
-                            if (state.menu and state.menu.disposed) or not valid(button) or not valid(state.tab.button)
-                                or button:GetAddress() ~= state.tab.button:GetAddress() then
+                            local ready, reason = refreshTab(state)
+                            if not ready and reason == "MOD_TAB_REMOVED" then
+                                -- A reused panel can finish closing and reopen between polls.
+                                -- Its old registration is gone, so retire only our page; the next
+                                -- ready poll may attach to the new native layout of this panel.
+                                retire(address, state)
+                            elseif (state.menu and state.menu.disposed) or (not ready and reason ~= "MOD_TAB_REBUILDING") then
+                                if not ready then log("TAB_UNAVAILABLE", tostring(reason)) end
                                 runtime.failed[address] = true
                                 retire(address, state)
-                            else
+                            elseif ready then
                                 -- Leaving the mod tab revokes any unfinished edit or preview.
                                 if state.editors and not (state.menu and state.menu.active) and state.editors.active() then state.editors.close() end
                                 local updated, failure = pcall(function()
@@ -1592,24 +1607,45 @@ function Runtime.start(providers, options)
                             end
                         end
                     elseif not runtime.failed[address] and readyPanel(panel) then
-                        local attachStart = os.clock()
-                        local attached, result = pcall(attach, panel)
-                        -- Measurement hook for test builds: a job sets __PBZ_MODCONFIG_PERF__ = {} to collect
-                        -- page build time and how many settings panels the search finds (growth = leftovers).
-                        local perf = rawget(_G, "__PBZ_MODCONFIG_PERF__")
-                        if type(perf) == "table" and #perf < 200 then
-                            perf[#perf + 1] = string.format("attach=%.1fms pass=%.1fms panels=%d at=%.3f",
-                                (os.clock() - attachStart) * 1000, runtime.lastPassMs or -1, runtime.panelCount or 0, attachStart)
-                        end
-                        if attached then runtime.panels[address] = result
-                        else
-                            runtime.failed[address] = true
-                            log("PANEL_ATTACH_FAILED", result)
-                            -- A panel kept by the game across a load still carries the tab of a forgotten
-                            -- page; it stays without the mod page until the game builds a new panel.
-                            if runtime.forgottenByLoad and runtime.forgottenByLoad[address]
-                                and tostring(result):find("MOD_TAB_ALREADY_OWNED", 1, true) then
-                                log("PANEL_KEPT_ACROSS_LOAD", address)
+                        local selected = panel.W_OverlayTabList_C:GetSelectedTabId()
+                        selected = type(selected) == "string" and selected or selected:ToString()
+                        local retry = runtime.attachRetries[address]
+                        -- A different selected tab is a new opportunity to attach. Do not repeat
+                        -- registration every 50 ms while the other menu keeps its tab selected.
+                        if not retry or retry.selected ~= selected then
+                            local attachStart = os.clock()
+                            local attached, result = pcall(attach, panel)
+                            -- Measurement hook for test builds: a job sets __PBZ_MODCONFIG_PERF__ = {} to collect
+                            -- page build time and how many settings panels the search finds (growth = leftovers).
+                            local perf = rawget(_G, "__PBZ_MODCONFIG_PERF__")
+                            if type(perf) == "table" and #perf < 200 then
+                                perf[#perf + 1] = string.format("attach=%.1fms pass=%.1fms panels=%d at=%.3f",
+                                    (os.clock() - attachStart) * 1000, runtime.lastPassMs or -1, runtime.panelCount or 0, attachStart)
+                            end
+                            if attached then
+                                runtime.panels[address] = result
+                                runtime.attachRetries[address] = nil
+                            else
+                                log("PANEL_ATTACH_FAILED", result)
+                                local detail = tostring(result)
+                                local attempts = (retry and retry.attempts or 0) + 1
+                                -- Only the pairing check is transient. A failed rollback or retained
+                                -- cleanup state must finish without registering another tab on top.
+                                if attempts < 3 and not runtime.panels[address]
+                                    and detail:find("MOD_TAB_PAIRING_FAILED", 1, true)
+                                    and not detail:find("TAB_ROLLBACK_FAILED", 1, true) then
+                                    runtime.attachRetries[address] = {selected = selected, attempts = attempts}
+                                    log("PANEL_ATTACH_DEFERRED", tostring(attempts) .. "/3 selected=" .. selected)
+                                else
+                                    runtime.attachRetries[address] = nil
+                                    runtime.failed[address] = true
+                                end
+                                -- A panel kept by the game across a load still carries the tab of a forgotten
+                                -- page; it stays without the mod page until the game builds a new panel.
+                                if runtime.forgottenByLoad and runtime.forgottenByLoad[address]
+                                    and tostring(result):find("MOD_TAB_ALREADY_OWNED", 1, true) then
+                                    log("PANEL_KEPT_ACROSS_LOAD", address)
+                                end
                             end
                         end
                     end
