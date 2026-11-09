@@ -2,11 +2,13 @@
 
 在游戏原生设置中增加「模组」页签，为接入的模组提供统一配置界面。
 
-**版本：1.0.1** · **目标游戏构建：Steam 26367565** · **前置：UE4SS #5 1.0.3**
+**版本：1.0.2** · **目标游戏构建：Steam 26367565** · **前置：UE4SS #5 1.0.3**
 
 作者：[皮一下就很凡@Bilibili](https://space.bilibili.com/26786884)
 
 1.0.0 从 JavaScript 版迁移到 UE4SS Lua，沿用模组身份并保留原有设置。游戏内支持的控件包括开关、滑条、选项、快捷键、颜色及确认操作。游戏内测试范围见 [验证记录](VALIDATION.md)。
+
+在地图收集追踪 1.0.7 中点击“恢复已删除图标”，按钮会显示恢复数量或“暂无可恢复图标”。
 
 ## 安装与更新
 
@@ -17,7 +19,7 @@
 需要 Python 3 和 Node.js，不需要提取游戏脚本。源码位于 `ue4ss/` 和 `lua/`，图片位于 `assets/`。
 
 ```powershell
-python build_ue4ss.py --out .local/build-1.0.1
+python build_ue4ss.py --out .local/build-1.0.2
 ```
 
 构建只写入仓库 `.local/` 下的新目录，不安装游戏文件。生成的 `release-manifest.json` 记录版本和逐文件哈希。

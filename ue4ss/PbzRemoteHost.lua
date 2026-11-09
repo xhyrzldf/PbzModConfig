@@ -30,7 +30,7 @@ end
 
 local function createProxy(deps, modId, descriptor, schema, hostId, instance)
     local server, pending, outbox = nil, {}, {}
-    local nextId, alive, asyncError = 1, true, nil
+    local nextId, alive, asyncError, actionResult = 1, true, nil, nil
     local settled = 0 -- highest command id whose result has been taken in
     local shown = nil -- the last {revision, values} handed out
     local listeners, nextListener = {}, 0
@@ -158,8 +158,11 @@ local function createProxy(deps, modId, descriptor, schema, hostId, instance)
         local entry = type(key) == "string" and schema.entries[key] or nil
         if not entry or entry.type ~= "action" then return result(false, "UNKNOWN_ACTION") end
         if not Core.enabled(entry, current.values) or not Core.visible(entry, current.values) then return result(false, "DISABLED") end
-        if not enqueue({op = "action", key = key}) then return result(false, "REMOTE_BUSY") end
-        return result(true)
+        local command = enqueue({op = "action", key = key})
+        if not command then return result(false, "REMOTE_BUSY") end
+        local reply = result(true)
+        reply.actionId = command.id
+        return reply
     end
 
     function provider.previewSound(key, context)
@@ -185,14 +188,23 @@ local function createProxy(deps, modId, descriptor, schema, hostId, instance)
         return value
     end
 
+    function provider.consumeActionResult()
+        local value = actionResult
+        actionResult = nil
+        return value
+    end
+
     local proxy = {provider = provider}
 
     -- Merge a message from the owner. Results first: they decide which optimistic
     -- changes survive; the snapshot in the same message is the authority.
     function proxy.ingest(up)
         local acknowledged = (up.ah == hostId and math.type(up.ack) == "integer") and up.ack or 0
-        local keep = {}
-        for _, command in ipairs(outbox) do if command.id > acknowledged then keep[#keep + 1] = command end end
+        local keep, actions = {}, {}
+        for _, command in ipairs(outbox) do
+            if command.id > acknowledged then keep[#keep + 1] = command
+            elseif command.op == "action" then actions[command.id] = command.key end
+        end
         outbox = keep
         local resolved = {}
         if json.isArray(up.res) then
@@ -215,6 +227,12 @@ local function createProxy(deps, modId, descriptor, schema, hostId, instance)
         for id, answer in pairs(resolved) do
             if answer.ok ~= true and id <= acknowledged and id > settled and not asyncError then
                 asyncError = type(answer.err) == "string" and answer.err or "FAILED"
+            end
+            if actions[id] and id > settled and (not actionResult or id > actionResult.id) then
+                local validMessage = Core.isText(answer.msg, true)
+                actionResult = {id = id, key = actions[id], ok = answer.ok == true and validMessage,
+                    message = validMessage and Core.copy(answer.msg) or nil}
+                if not validMessage then asyncError = "INVALID_ACTION_MESSAGE" end
             end
         end
         if acknowledged > settled then settled = acknowledged end

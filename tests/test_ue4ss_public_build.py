@@ -20,7 +20,8 @@ class PublicUe4ssBuildTests(unittest.TestCase):
 
     def test_source_build_has_entry_version_and_no_development_bridge(self):
         manifest = BUILD.build(self.out)
-        self.assertEqual(manifest['version'], '1.0.1')
+        expected = json.loads((ROOT / 'ue4ss-release.json').read_text(encoding='utf-8'))
+        self.assertEqual(manifest['version'], expected['version'])
         self.assertEqual(manifest['game_build'], '26367565')
         scripts = self.out / 'ue4ss/Mods/PbzModConfig/Scripts'
         self.assertIn('local Dev = nil', (scripts / 'main.lua').read_text(encoding='utf-8'))

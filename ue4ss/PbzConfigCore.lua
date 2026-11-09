@@ -334,6 +334,7 @@ local function text(value, optional)
     for _, item in pairs(value) do if type(item) ~= "string" then return false end end
     return true
 end
+Core.isText = text
 
 function Core.valueError(entry, value)
     local kind = entry.type

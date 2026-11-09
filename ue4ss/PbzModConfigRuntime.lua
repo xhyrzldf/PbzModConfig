@@ -44,6 +44,10 @@ local DEFAULT_WORDS = {
     editRejected = {zhHans = "未能应用，请重试或取消。", en = "Couldn't apply this change. Retry or cancel."},
     failed = {zhHans = "保存失败，当前更改尚未写入文件。", en = "Couldn't save your changes."},
     pending = {zhHans = "正在保存…", en = "Saving…"},
+    actionPending = {zhHans = "处理中…", zhHant = "處理中…", en = "Working…", ko = "처리 중…",
+        ru = "Выполняется…", ["es-ES"] = "Procesando…", ["es-419"] = "Procesando…", vi = "Đang xử lý…"},
+    actionDone = {zhHans = "已完成", zhHant = "已完成", en = "Done", ko = "완료",
+        ru = "Готово", ["es-ES"] = "Completado", ["es-419"] = "Completado", vi = "Hoàn tất"},
     off = {zhHans = "关闭", en = "Off"}, on = {zhHans = "开启", en = "On"},
     pressKey = {zhHans = "按下按键…", en = "Press a key…"}, unbound = {zhHans = "未绑定", en = "Unbound"},
     clearBinding = {zhHans = "清除绑定", en = "Clear binding"},
@@ -499,7 +503,20 @@ function Runtime.start(providers, options)
                     log("PROVIDER_ASYNC_FAILED", provider.modId .. " " .. tostring(failure))
                 elseif not fetched then log("PROVIDER_ASYNC_POLL_FAILED", failure) end
             end
+            if type(provider.consumeActionResult) == "function" then
+                local fetched, answer = pcall(provider.consumeActionResult)
+                local action = record.action
+                if fetched and answer and action and action.pending
+                    and answer.id == action.id and answer.key == action.key then
+                    record.action = answer.ok and {key = action.key, message = answer.message, expires = now() + 4} or nil
+                elseif not fetched then log("PROVIDER_ACTION_POLL_FAILED", answer) end
+            end
         end
+    end
+
+    local function visibleAction(record)
+        local action = record.action
+        if action and (action.pending or now() < action.expires) then return action end
     end
 
     local function modelsFor(state)
@@ -577,6 +594,12 @@ function Runtime.start(providers, options)
                                 captureLabel = entry.captureLabel and resolve(entry.captureLabel, options) or word("pressKey"),
                                 unboundLabel = entry.unboundLabel and resolve(entry.unboundLabel, options) or word("unbound"),
                                 clearLabel = entry.clearLabel and resolve(entry.clearLabel, options) or word("clearBinding")}
+                            local action = entry.type == "action" and visibleAction(record)
+                            if action and action.key == entry.key then
+                                model.buttonLabel = action.pending and word("actionPending")
+                                    or (action.message and resolve(action.message, options) or word("actionDone"))
+                                model.enabled = model.enabled and not action.pending
+                            end
                             local other = companionOf[entry.key]
                             if other then
                                 local otherValue = snapshot.values[other.key]
@@ -755,10 +778,11 @@ function Runtime.start(providers, options)
             local snapshot = record.snapshot
             local persistence = snapshot and snapshot.persistence or {}
             local modId = record.provider.modId
+            local action = visibleAction(record)
             parts[#parts + 1] = table.concat({tostring(modId), tostring(snapshot and snapshot.revision),
                 tostring(record.error), tostring(record.errorKind), tostring(record.errorCode), tostring(record.readFailed),
                 tostring(persistence.state), tostring(persistence.error), tostring(expanded[modId] == true),
-                tostring(inlineConfirm ~= nil and inlineConfirm.armed(modId))}, ",")
+                tostring(inlineConfirm ~= nil and inlineConfirm.armed(modId)), tostring(action)}, ",")
         end
         return table.concat(parts, "|")
     end
@@ -982,6 +1006,7 @@ function Runtime.start(providers, options)
         local record = state.providers[target.providerId]
         if not record or record.busy or record.provider ~= target.ownerToken then return {ok = false, error = "STALE_PROVIDER"} end
         record.busy = true
+        if target.type == "action" then record.action = nil end
         local provider, stage, applied = record.provider, "apply", nil
         local ok, err = pcall(function()
             local context = {baseRevision = target.baseRevision or target.revision, origin = "PbzModConfig"}
@@ -1010,6 +1035,9 @@ function Runtime.start(providers, options)
                     error("DISABLED", 0)
                 end
                 applied = provider.invokeAction(target.key, context)
+                if applied and applied.message ~= nil then
+                    assert(Core and Core.isText(applied.message), "INVALID_ACTION_MESSAGE")
+                end
             else
                 -- target.patch: several values at once (clearing a keyboard binding with its controller companion)
                 local patch = target.patch or {[target.key] = value}
@@ -1040,6 +1068,13 @@ function Runtime.start(providers, options)
         record.busy = false
         if ok then
             record.error, record.errorKind, record.errorCode = nil, nil, nil
+            if target.type == "action" and not target.reset then
+                if provider.async ~= true then
+                    record.action = {key = target.key, message = applied.message, expires = now() + 4}
+                elseif applied.actionId and type(provider.consumeActionResult) == "function" then
+                    record.action = {key = target.key, id = applied.actionId, pending = true}
+                end
+            end
             return {ok = true}
         end
         record.error, record.errorKind, record.errorCode = tostring(err), stage, nil

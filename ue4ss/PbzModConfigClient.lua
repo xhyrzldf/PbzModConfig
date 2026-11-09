@@ -187,7 +187,13 @@ function Client.register(provider, options)
             if not Core.enabled(entry, snapshot.values) or not Core.visible(entry, snapshot.values) then
                 return {id = id, ok = false, err = "DISABLED"}
             end
-            return resultOf(id, provider.invokeAction(command.key, context))
+            local action = provider.invokeAction(command.key, context)
+            local result = resultOf(id, action)
+            if result.ok and action.message ~= nil then
+                assert(Core.isText(action.message), "INVALID_ACTION_MESSAGE")
+                result.msg = Core.copy(action.message)
+            end
+            return result
         elseif op == "preview" then
             stopPreview()
             local entry = type(command.key) == "string" and schema.entries[command.key] or nil
