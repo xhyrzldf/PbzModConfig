@@ -611,6 +611,16 @@ function Rows.create(owner, host, model, onChange, extras)
                 end
             end
         else
+            -- Build 26367565: the header's own full-row button is bound in its blueprint to
+            -- ApplyGameSetting, which uses the native setting object a mod row does not have; one
+            -- click on a group title crashed the game (PBZ.exe+0x58a4b6f, reproduced 2026-11-10).
+            -- The other row types replace their native controls. A header has no control of its
+            -- own, so its native button stays in the layout but can no longer be clicked or focused.
+            local native = row.W_SettingBaseButton
+            assert(Widgets.valid(native), "ROW_HEADER_BUTTON_MISSING")
+            native:SetIsInteractionEnabled(false)
+            native:SetIsFocusable(false)
+            native:SetVisibility(Widgets.V.HitTestInvisible)
             applyValue = function() end
         end
         if model.colorPreview ~= nil then
